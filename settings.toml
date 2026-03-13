@@ -45,12 +45,12 @@ loop = true
 # loop = true
 
 [vision]
-model_path = "/models/my_model.pt"
+model_path = "/app/src/pmai_core/models/my_model.pt"
 confidence_threshold = 0.5
 device = "cpu"
 
 [reid]
-model_path = "models/osnet_ain_x0_25.onnx"
+model_path = "/app/src/pmai_core/models/osnet_x0_25_msmt17.onnx"
 similarity_threshold = 0.7
 embedding_update_interval = 5
 gallery_max_size = 1000

@@ -9,8 +9,9 @@ __pycache__/
 dist/
 build/
 
-# ONNX models (large binary files)
-models/*.onnx
+# AI model weights (large binary files)
+*.onnx
+*.pt
 
 # IDE
 .idea/
