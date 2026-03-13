@@ -58,31 +58,28 @@ def _is_capture_device(device_path: str) -> bool:
         )
         return "Video Capture" in result.stdout
     except (FileNotFoundError, subprocess.TimeoutExpired):
-        return True  # assume capture-capable if v4l2-ctl is not installed
+        return True
 
 
 def _can_open_with_opencv(device_path: str) -> bool:
-    """Validate that OpenCV can actually open the device."""
-    # OpenCV is more reliable with V4L2 when using the numeric index, not the
-    # "/dev/videoX" path (the latter often triggers: "can't be used to capture by name").
-    device_index_match = re.search(r"\d+$", device_path)
-    if device_index_match is None:
+    """Validate that OpenCV can open the device.
+
+    Only checks ``isOpened()`` — does NOT try to read a frame, because in
+    WSL2 / Docker the first frame can take 10+ seconds to arrive and
+    would cause a false-negative timeout.
+    """
+    idx_match = re.search(r"\d+$", device_path)
+    if idx_match is None:
         return False
-    idx = int(device_index_match.group())
+    idx = int(idx_match.group())
 
     cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-    cap.set(cv2.CAP_PROP_FPS, 15)
+    opened = cap.isOpened()
+    cap.release()
 
-    try:
-        if not cap.isOpened():
-            return False
-
-        ret, _ = cap.read()
-        return ret
-    finally:
-        cap.release()
+    if not opened:
+        logger.debug("opencv_cannot_open", device=device_path)
+    return opened
 
 
 def discover_usb_cameras(
@@ -95,31 +92,25 @@ def discover_usb_cameras(
     --------
     1. Enumerate ``/dev/video*`` device nodes.
     2. Filter through V4L2 to keep only capture-capable devices.
-    3. Validate each with ``cv2.VideoCapture``.
+    3. Validate each with ``cv2.VideoCapture.isOpened()``.
     """
     video_devices = sorted(Path("/dev").glob("video*"))
 
     if not video_devices:
-        # This usually means the container/host has no physical cameras
-        # attached or they are not passed through to the container.
         logger.info("no_video_devices_found")
         return []
 
     v4l2_names = _parse_v4l2_devices()
-
     cameras: list[CameraInfo] = []
-    logger.info("video_devices", video_devices=video_devices)
 
     for dev in video_devices:
         dev_str = str(dev)
 
-        logger.info("dev_str", dev_str=dev_str)
         if not _is_capture_device(dev_str):
             logger.debug("skipping_non_capture_device", device=dev_str)
             continue
 
         if not _can_open_with_opencv(dev_str):
-            logger.debug("opencv_cannot_open", device=dev_str)
             continue
 
         idx_match = re.search(r"\d+$", dev_str)

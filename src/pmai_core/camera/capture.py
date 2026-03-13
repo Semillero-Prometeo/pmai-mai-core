@@ -23,6 +23,9 @@ FrameType = NDArray[np.uint8]
 
 QUEUE_MAX_SIZE = 4
 
+# MJPEG fourcc — the most reliable pixel format through WSL2 / Docker.
+_MJPEG_FOURCC = cv2.VideoWriter.fourcc(*"MJPG")
+
 
 class CameraCapture:
     """Reads frames from a single USB camera in a background thread.
@@ -53,10 +56,13 @@ class CameraCapture:
             raise ValueError(f"Cannot parse device index from {self._info.device_path}")
         idx = int(idx_match.group())
 
-        # Prefer V4L2 explicitly inside Linux containers.
         self._cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
         if not self._cap.isOpened():
             raise RuntimeError(f"Cannot open camera {self._info.device_path}")
+
+        # Force MJPEG — avoids select() timeouts on WSL2 / Docker where
+        # raw YUYV negotiation is unreliable.
+        self._cap.set(cv2.CAP_PROP_FOURCC, _MJPEG_FOURCC)
 
         w, h = self._info.resolution
         self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
