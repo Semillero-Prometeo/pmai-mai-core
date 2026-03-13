@@ -1,0 +1,28 @@
+[app]
+name = "pmai-core"
+log_level = "INFO"
+
+[camera]
+auto_discover = true
+poll_interval_seconds = 10
+default_resolution = [640, 480]
+default_fps = 15
+
+[vision]
+model_path = "models/yolo11n.onnx"
+confidence_threshold = 0.5
+device = "cpu"
+
+[reid]
+model_path = "models/osnet_ain_x0_25.onnx"
+similarity_threshold = 0.7
+embedding_update_interval = 5
+gallery_max_size = 1000
+
+[nats]
+url = "nats://localhost:4222"
+subject_prefix = "pmai"
+
+[api]
+host = "0.0.0.0"
+port = 8000

@@ -1,0 +1,61 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pmai-core"
+version = "0.1.0"
+description = "PROMETEO Multimodal AI – Multicamera perception, cross-camera Re-ID, and semantic abstraction"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.12"
+authors = [
+    { name = "Semillero Prometeo" },
+]
+keywords = ["computer-vision", "re-identification", "multimodal", "yolo", "reid"]
+
+dependencies = [
+    "opencv-python-headless>=4.10",
+    "onnxruntime>=1.19",
+    "ultralytics>=8.3",
+    "numpy>=1.26",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "nats-py>=2.9",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "structlog>=24.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+]
+
+[project.scripts]
+pmai-core = "pmai_core.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pmai_core"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+plugins = ["pydantic.mypy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
