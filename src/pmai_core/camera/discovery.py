@@ -90,12 +90,11 @@ def discover_usb_cameras(
     3. Validate each with ``cv2.VideoCapture``.
     """
     video_devices = sorted(Path("/dev").glob("video*"))
-    
-    logger.info(Path("/dev").glob("video*"))
-    logger.info("video_devices_found", video_devices=video_devices)
-    
+
     if not video_devices:
-        logger.warning("no_video_devices_found")
+        # This usually means the container/host has no physical cameras
+        # attached or they are not passed through to the container.
+        logger.info("no_video_devices_found")
         return []
 
     v4l2_names = _parse_v4l2_devices()
