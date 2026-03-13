@@ -52,11 +52,7 @@ class YOLODetector:
             xyxy = boxes[i].xyxy.cpu().numpy().squeeze().astype(int)
             xmin, ymin, xmax, ymax = xyxy.tolist()
 
-            label = (
-                self._class_names[cls_id]
-                if cls_id < len(self._class_names)
-                else str(cls_id)
-            )
+            label = self._class_names[cls_id] if cls_id < len(self._class_names) else str(cls_id)
 
             detections.append(
                 Detection(
