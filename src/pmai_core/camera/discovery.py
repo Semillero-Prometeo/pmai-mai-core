@@ -48,15 +48,33 @@ def _parse_v4l2_devices() -> dict[str, str]:
 
 
 def _is_capture_device(device_path: str) -> bool:
-    """Check if the V4L2 device supports video capture (not just metadata)."""
+    """Check if the V4L2 device supports real frame capture.
+
+    Some USB cameras expose extra nodes (e.g. metadata) as ``/dev/video1``
+    that are visible but cannot provide frames to OpenCV. We detect and
+    filter those nodes before trying ``VideoCapture``.
+    """
     try:
-        result = subprocess.run(
+        result_all = subprocess.run(
             ["v4l2-ctl", "--device", device_path, "--all"],
             capture_output=True,
             text=True,
             timeout=5,
         )
-        return "Video Capture" in result.stdout
+        if "Video Capture" not in result_all.stdout:
+            return False
+
+        # Metadata-only nodes generally have no pixel formats.
+        result_formats = subprocess.run(
+            ["v4l2-ctl", "--device", device_path, "--list-formats-ext"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result_formats.returncode != 0:
+            return False
+
+        return "Pixel Format" in result_formats.stdout
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return True
 
