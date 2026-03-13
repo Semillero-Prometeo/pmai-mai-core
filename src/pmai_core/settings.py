@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import tomllib
 from pathlib import Path
 from typing import Self
@@ -39,6 +40,20 @@ class ReIDSettings(BaseModel):
 class NATSSettings(BaseModel):
     url: str = "nats://localhost:4222"
     subject_prefix: str = "pmai"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _override_url_from_env(cls, values: dict) -> dict:  # type: ignore[override]
+        """Allow `NATS_SERVER` env var to override the URL.
+
+        This is primarily used in Docker, where the broker is reachable via
+        the `nats-server` service name instead of `localhost`.
+        """
+        env_url = os.getenv("NATS_SERVER")
+        if env_url:
+            values = dict(values) if isinstance(values, dict) else {}
+            values["url"] = env_url
+        return values
 
 
 class APISettings(BaseModel):
