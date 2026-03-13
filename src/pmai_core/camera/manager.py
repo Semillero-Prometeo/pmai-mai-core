@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
@@ -19,7 +20,7 @@ logger = structlog.get_logger(__name__)
 
 
 class CameraManager:
-    """Manages the full lifecycle of USB cameras: discover ➜ capture ➜ poll.
+    """Manages the full lifecycle of USB cameras: discover -> capture -> poll.
 
     Call :meth:`start` once to discover cameras and begin capturing.
     :meth:`poll_for_changes` can be scheduled periodically to hot-detect
@@ -58,25 +59,47 @@ class CameraManager:
         logger.info("camera_manager_stopped")
 
     def poll_for_changes(self) -> None:
-        """Re-scan USB devices and start/stop cameras as needed."""
+        """Detect newly plugged / unplugged cameras without disturbing active ones.
+
+        Instead of re-running full discovery (which would try to open devices
+        already held by capture threads and fail on V4L2's single-open
+        constraint), we check the device nodes in ``/dev`` directly and only
+        run discovery for **new** nodes.
+        """
         cam_settings = self._settings.camera
-        current = discover_usb_cameras(
-            default_resolution=cam_settings.default_resolution,
-            default_fps=cam_settings.default_fps,
-        )
-        current_ids = {c.camera_id for c in current}
-        existing_ids = set(self._captures.keys())
 
-        # Start newly discovered cameras
-        for info in current:
-            if info.camera_id not in existing_ids:
-                logger.info("new_camera_detected", camera_id=info.camera_id)
-                self._start_camera(info)
+        # Cheap filesystem check: which /dev/video* nodes exist right now?
+        current_dev_paths = {str(p) for p in sorted(Path("/dev").glob("video*"))}
 
-        # Stop removed cameras
-        for cam_id in existing_ids - current_ids:
-            logger.info("camera_removed", camera_id=cam_id)
-            self._stop_camera(cam_id)
+        # Which device paths do we already manage?
+        active_dev_paths = {
+            info.device_path for info in self._camera_infos.values()
+        }
+
+        # --- Detect removed cameras (device node disappeared) ---
+        for cam_id, info in list(self._camera_infos.items()):
+            if info.device_path not in current_dev_paths:
+                logger.info("camera_removed", camera_id=cam_id)
+                self._stop_camera(cam_id)
+
+        # --- Detect removed cameras (capture thread died) ---
+        for cam_id, cap in list(self._captures.items()):
+            if not cap.is_running:
+                logger.warning("camera_capture_died", camera_id=cam_id)
+                self._stop_camera(cam_id)
+
+        # --- Detect new cameras (device node appeared, not yet managed) ---
+        new_dev_paths = current_dev_paths - active_dev_paths
+        if new_dev_paths:
+            logger.info("new_device_nodes_detected", paths=sorted(new_dev_paths))
+            new_cameras = discover_usb_cameras(
+                default_resolution=cam_settings.default_resolution,
+                default_fps=cam_settings.default_fps,
+            )
+            for info in new_cameras:
+                if info.camera_id not in self._captures:
+                    logger.info("new_camera_detected", camera_id=info.camera_id)
+                    self._start_camera(info)
 
     async def run_polling_loop(self) -> None:
         """Async loop that periodically checks for camera changes."""

@@ -41,6 +41,8 @@ class CameraCapture:
         self._queue: Queue[tuple[FrameType, float]] = Queue(maxsize=QUEUE_MAX_SIZE)
         self._thread: threading.Thread | None = None
         self._running = threading.Event()
+        self._logged_first_frame = False
+        self._consecutive_failures = 0
 
     @property
     def camera_id(self) -> str:
@@ -99,9 +101,28 @@ class CameraCapture:
         while self._running.is_set():
             ret, frame = self._cap.read()
             if not ret or frame is None:
-                logger.warning("frame_read_failed", camera_id=self.camera_id)
+                self._consecutive_failures += 1
+                if self._consecutive_failures % 50 == 0:
+                    logger.error(
+                        "frame_read_failed_many_times",
+                        camera_id=self.camera_id,
+                        failures=self._consecutive_failures,
+                    )
+                else:
+                    logger.warning("frame_read_failed", camera_id=self.camera_id)
                 time.sleep(0.05)
                 continue
+
+            if not self._logged_first_frame:
+                h, w = frame.shape[:2]
+                logger.info(
+                    "camera_first_frame",
+                    camera_id=self.camera_id,
+                    resolution=f"{w}x{h}",
+                )
+                self._logged_first_frame = True
+
+            self._consecutive_failures = 0
 
             ts = time.time()
             try:

@@ -61,20 +61,33 @@ def _is_capture_device(device_path: str) -> bool:
             text=True,
             timeout=5,
         )
-        if "Video Capture" not in result_all.stdout:
+        all_out = result_all.stdout
+        # Reject clear metadata-only nodes.
+        if "Metadata Capture" in all_out and "Video Capture" not in all_out:
+            return False
+        if "Video Capture" not in all_out:
             return False
 
-        # Metadata-only nodes generally have no pixel formats.
+        # In WSL2 + Docker, --list-formats-ext may intermittently fail even for
+        # valid camera nodes. Use it as a positive signal when available, but
+        # don't reject a node solely because this command failed.
         result_formats = subprocess.run(
             ["v4l2-ctl", "--device", device_path, "--list-formats-ext"],
             capture_output=True,
             text=True,
             timeout=5,
         )
+        if result_formats.returncode == 0 and "Pixel Format" in result_formats.stdout:
+            return True
         if result_formats.returncode != 0:
-            return False
+            logger.debug(
+                "v4l2_formats_unavailable",
+                device=device_path,
+                returncode=result_formats.returncode,
+            )
 
-        return "Pixel Format" in result_formats.stdout
+        # Fallback: if --all reports video capture, trust it.
+        return True
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return True
 
@@ -112,13 +125,25 @@ def discover_usb_cameras(
     2. Filter through V4L2 to keep only capture-capable devices.
     3. Validate each with ``cv2.VideoCapture.isOpened()``.
     """
-    video_devices = sorted(Path("/dev").glob("video*"))
+    raw_devices = sorted(Path("/dev").glob("video*"))
 
-    if not video_devices:
+    if not raw_devices:
         logger.info("no_video_devices_found")
         return []
 
     v4l2_names = _parse_v4l2_devices()
+    # Si un mismo nombre de dispositivo expone varios nodos (p.ej. /dev/video0
+    # y /dev/video1), nos quedamos solo con el de índice más bajo. En muchas
+    # webcams USB el segundo nodo suele ser metadata.
+    by_name: dict[str, Path] = {}
+    for dev in raw_devices:
+        dev_str = str(dev)
+        name = v4l2_names.get(dev_str, dev_str)
+        current = by_name.get(name)
+        if current is None or dev.name < current.name:
+            by_name[name] = dev
+
+    video_devices = sorted(by_name.values())
     cameras: list[CameraInfo] = []
 
     for dev in video_devices:
