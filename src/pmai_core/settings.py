@@ -74,6 +74,14 @@ class APISettings(BaseModel):
     port: int = 8000
 
 
+class PipelineSettings(BaseModel):
+    """Configuration for the main processing loop."""
+
+    # If > 0, sleep this many seconds between iterations of the main loop.
+    # If 0, the loop runs as fast as possible (original behaviour).
+    loop_interval_seconds: float = 0.0
+
+
 class Settings(BaseModel):
     """Root settings container – merges TOML file values with defaults."""
 
@@ -83,6 +91,7 @@ class Settings(BaseModel):
     reid: ReIDSettings = ReIDSettings()
     nats: NATSSettings = NATSSettings()
     api: APISettings = APISettings()
+    pipeline: PipelineSettings = PipelineSettings()
 
     @classmethod
     def from_toml(cls, path: Path = _DEFAULT_SETTINGS_PATH) -> Self:

@@ -150,7 +150,12 @@ class PipelineEngine:
 
                 await self._publish_events(tracked, cam_id)
 
-            if not processed_any:
+            interval = self._settings.pipeline.loop_interval_seconds
+            if interval > 0:
+                # Configured pacing for the whole pipeline.
+                await asyncio.sleep(interval)
+            elif not processed_any:
+                # No frames were processed – yield briefly to avoid busy-waiting.
                 await asyncio.sleep(0.01)
 
     def stop(self) -> None:

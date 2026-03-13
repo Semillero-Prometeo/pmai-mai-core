@@ -55,6 +55,11 @@ similarity_threshold = 0.7
 embedding_update_interval = 5
 gallery_max_size = 1000
 
+[pipeline]
+# Seconds to wait between iterations of the main `run` loop.
+# 0.0 means "lo más rápido posible".
+loop_interval_seconds = 5.0
+
 [nats]
 url = "nats://localhost:4222"
 subject_prefix = "pmai"
