@@ -9,7 +9,7 @@ default_resolution = [640, 480]
 default_fps = 15
 
 [vision]
-model_path = "models/yolo11n.onnx"
+model_path = "/models/my_model.pt"
 confidence_threshold = 0.5
 device = "cpu"
 

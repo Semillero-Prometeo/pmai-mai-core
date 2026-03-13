@@ -1,122 +1,75 @@
-"""YOLO object detector using ONNX Runtime for CPU-optimised inference."""
+"""YOLO object detector using the trained Ultralytics model (.pt)."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-import cv2
 import numpy as np
-import onnxruntime as ort
 import structlog
 from numpy.typing import NDArray
+from ultralytics import YOLO
 
 from pmai_core.domain.detection import BBox, Detection
 from pmai_core.settings import VisionSettings
 
 logger = structlog.get_logger(__name__)
 
-# YOLO input size (square)
-_INPUT_SIZE = 640
-
 
 class YOLODetector:
-    """Wraps a YOLO ONNX model for object detection on CPU.
-
-    The model is expected to be exported from Ultralytics with the standard
-    YOLO output format: ``(1, num_detections, 4+num_classes)`` or the
-    transposed variant ``(1, 4+num_classes, num_detections)``.
-    """
+    """Wraps the trained Ultralytics YOLO model (.pt) for detection on CPU."""
 
     def __init__(self, settings: VisionSettings, class_names: list[str] | None = None) -> None:
         model_path = Path(settings.model_path)
         if not model_path.exists():
-            raise FileNotFoundError(f"YOLO ONNX model not found: {model_path}")
+            raise FileNotFoundError(f"YOLO model not found: {model_path}")
 
-        sess_opts = ort.SessionOptions()
-        sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        sess_opts.intra_op_num_threads = 2
+        self._model = YOLO(str(model_path), task="detect")
+        # For N100 (CPU only) we always run on CPU.
+        self._model.to(settings.device)
 
-        self._session = ort.InferenceSession(
-            str(model_path),
-            sess_options=sess_opts,
-            providers=["CPUExecutionProvider"],
-        )
-        self._input_name = self._session.get_inputs()[0].name
         self._confidence_threshold = settings.confidence_threshold
-        self._class_names = class_names or []
+        # Prefer class names from the model; fallback to user-supplied
+        self._class_names = self._model.names or class_names or []
         logger.info(
             "yolo_detector_loaded",
             model=str(model_path),
             threshold=self._confidence_threshold,
+            device=settings.device,
         )
 
     def detect(self, frame: NDArray[np.uint8]) -> list[Detection]:
         """Run inference on a BGR frame and return a list of ``Detection``."""
-        original_h, original_w = frame.shape[:2]
-        blob = self._preprocess(frame)
-        outputs = self._session.run(None, {self._input_name: blob})
-        raw = outputs[0]
-        return self._postprocess(raw, original_w, original_h)
+        results = self._model(frame, verbose=False)[0]
+        boxes = results.boxes
 
-    def _preprocess(self, frame: NDArray[np.uint8]) -> NDArray[np.float32]:
-        img = cv2.resize(frame, (_INPUT_SIZE, _INPUT_SIZE))
-        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = img.astype(np.float32) / 255.0
-        img = np.transpose(img, (2, 0, 1))
-        return np.expand_dims(img, axis=0)
-
-    def _postprocess(
-        self,
-        raw: NDArray[np.float32],
-        orig_w: int,
-        orig_h: int,
-    ) -> list[Detection]:
-        # Handle shape (1, 4+nc, N) by transposing to (1, N, 4+nc)
-        if raw.ndim == 3 and raw.shape[1] < raw.shape[2]:
-            raw = np.transpose(raw, (0, 2, 1))
-
-        predictions = raw[0]  # shape: (N, 4+nc)
         detections: list[Detection] = []
-
-        scale_x = orig_w / _INPUT_SIZE
-        scale_y = orig_h / _INPUT_SIZE
-
-        for pred in predictions:
-            cx, cy, w, h = pred[:4]
-            class_scores = pred[4:]
-            class_id = int(np.argmax(class_scores))
-            confidence = float(class_scores[class_id])
-
-            if confidence < self._confidence_threshold:
+        for i in range(len(boxes)):
+            cls_id = int(boxes[i].cls.item())
+            conf = float(boxes[i].conf.item())
+            if conf < self._confidence_threshold:
                 continue
 
-            xmin = int((cx - w / 2) * scale_x)
-            ymin = int((cy - h / 2) * scale_y)
-            xmax = int((cx + w / 2) * scale_x)
-            ymax = int((cy + h / 2) * scale_y)
-
-            xmin = max(0, min(xmin, orig_w - 1))
-            ymin = max(0, min(ymin, orig_h - 1))
-            xmax = max(0, min(xmax, orig_w - 1))
-            ymax = max(0, min(ymax, orig_h - 1))
+            xyxy = boxes[i].xyxy.cpu().numpy().squeeze().astype(int)
+            xmin, ymin, xmax, ymax = xyxy.tolist()
 
             label = (
-                self._class_names[class_id]
-                if class_id < len(self._class_names)
-                else str(class_id)
+                self._class_names[cls_id]
+                if cls_id < len(self._class_names)
+                else str(cls_id)
             )
 
             detections.append(
                 Detection(
                     bbox=BBox(xmin=xmin, ymin=ymin, xmax=xmax, ymax=ymax),
                     label=label,
-                    class_id=class_id,
-                    confidence=confidence,
+                    class_id=cls_id,
+                    confidence=conf,
                 )
             )
 
-        detections = self._nms(detections, iou_threshold=0.45)
-        return detections
+        # YOLO ya aplica NMS interno, pero mantenemos la función por si se
+        # quiere filtrar aún más.
+        return self._nms(detections, iou_threshold=0.45)
 
     @staticmethod
     def _nms(detections: list[Detection], iou_threshold: float = 0.45) -> list[Detection]:
