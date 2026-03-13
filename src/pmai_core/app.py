@@ -17,18 +17,18 @@ from pmai_core.settings import Settings
 logger = structlog.get_logger(__name__)
 
 
-def _configure_logging(level: str) -> None:
-    structlog.configure(
-        processors=[
-            structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
-            structlog.dev.ConsoleRenderer(),
-        ],
-        wrapper_class=structlog.make_filtering_bound_logger(
-            structlog.get_level_from_name(level)
-        ),
-    )
+# def _configure_logging(level: str) -> None:
+#     structlog.configure(
+#         processors=[
+#             structlog.contextvars.merge_contextvars,
+#             structlog.processors.add_log_level,
+#             structlog.processors.TimeStamper(fmt="iso"),
+#             structlog.dev.ConsoleRenderer(),
+#         ],
+#         wrapper_class=structlog.make_filtering_bound_logger(
+#             structlog.get_level_from_name(level)
+#         ),
+#     )
 
 
 async def run_app(settings: Settings | None = None) -> None:
@@ -37,7 +37,7 @@ async def run_app(settings: Settings | None = None) -> None:
     if settings is None:
         settings = Settings.from_toml()
 
-    _configure_logging(settings.app.log_level)
+    # _configure_logging(settings.app.log_level)
     logger.info("starting_pmai_core", app=settings.app.name)
 
     # --- Camera manager ---
