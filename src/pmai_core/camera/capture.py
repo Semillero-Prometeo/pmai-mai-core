@@ -53,7 +53,8 @@ class CameraCapture:
             raise ValueError(f"Cannot parse device index from {self._info.device_path}")
         idx = int(idx_match.group())
 
-        self._cap = cv2.VideoCapture(idx)
+        # Prefer V4L2 explicitly inside Linux containers.
+        self._cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
         if not self._cap.isOpened():
             raise RuntimeError(f"Cannot open camera {self._info.device_path}")
 

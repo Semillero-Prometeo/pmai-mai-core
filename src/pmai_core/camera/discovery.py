@@ -63,7 +63,14 @@ def _is_capture_device(device_path: str) -> bool:
 
 def _can_open_with_opencv(device_path: str) -> bool:
     """Validate that OpenCV can actually open the device."""
-    cap = cv2.VideoCapture(device_path, cv2.CAP_V4L2)
+    # OpenCV is more reliable with V4L2 when using the numeric index, not the
+    # "/dev/videoX" path (the latter often triggers: "can't be used to capture by name").
+    device_index_match = re.search(r"\d+$", device_path)
+    if device_index_match is None:
+        return False
+    idx = int(device_index_match.group())
+
+    cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_FPS, 15)
