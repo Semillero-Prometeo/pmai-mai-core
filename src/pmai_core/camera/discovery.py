@@ -90,6 +90,10 @@ def discover_usb_cameras(
     3. Validate each with ``cv2.VideoCapture``.
     """
     video_devices = sorted(Path("/dev").glob("video*"))
+    
+    logger.info(Path("/dev").glob("video*"))
+    logger.info("video_devices_found", video_devices=video_devices)
+    
     if not video_devices:
         logger.warning("no_video_devices_found")
         return []
