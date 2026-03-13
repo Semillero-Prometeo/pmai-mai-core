@@ -93,11 +93,32 @@ class PipelineEngine:
                 self._frame_counter.setdefault(cam_id, 0)
                 self._frame_counter[cam_id] += 1
 
+                frame_index = self._frame_counter[cam_id]
+
+                # --- Detection (YOLO) ---
                 detections = await asyncio.to_thread(
                     self._detector.detect, frame,
                 )
 
+                if frame_index % 10 == 0:
+                    logger.info(
+                        "detection_summary",
+                        camera_id=cam_id,
+                        frame_index=frame_index,
+                        num_detections=len(detections),
+                        labels=[d.label for d in detections],
+                    )
+
                 tracked = self._trackers[cam_id].update(detections)
+
+                if frame_index % 10 == 0:
+                    logger.info(
+                        "tracking_summary",
+                        camera_id=cam_id,
+                        frame_index=frame_index,
+                        num_tracks=len(tracked),
+                        track_ids=[obj.id for obj in tracked],
+                    )
 
                 reid_interval = self._settings.reid.embedding_update_interval
                 do_reid = (
@@ -107,6 +128,25 @@ class PipelineEngine:
 
                 if do_reid:
                     await asyncio.to_thread(self._apply_reid, frame, tracked)
+
+                    # After ReID has potentially assigned global IDs, log summary.
+                    logger.info(
+                        "reid_summary",
+                        camera_id=cam_id,
+                        frame_index=frame_index,
+                        num_tracked=len(tracked),
+                        with_identity=len(
+                            [obj for obj in tracked if obj.global_id]
+                        ),
+                        identities=[
+                            {
+                                "track_id": obj.id,
+                                "global_id": obj.global_id,
+                            }
+                            for obj in tracked
+                            if obj.global_id
+                        ],
+                    )
 
                 await self._publish_events(tracked, cam_id)
 
