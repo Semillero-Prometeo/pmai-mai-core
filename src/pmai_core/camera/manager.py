@@ -10,21 +10,22 @@ import structlog
 
 from pmai_core.camera.capture import CameraCapture
 from pmai_core.camera.discovery import discover_usb_cameras
-from pmai_core.domain.camera import CameraStatus
+from pmai_core.domain.camera import CameraInfo, CameraSourceType, CameraStatus
 from pmai_core.settings import Settings
 
 if TYPE_CHECKING:
-    from pmai_core.domain.camera import CameraInfo
+    pass
 
 logger = structlog.get_logger(__name__)
 
 
 class CameraManager:
-    """Manages the full lifecycle of USB cameras: discover -> capture -> poll.
+    """Manages the full lifecycle of cameras: discover -> capture -> poll.
 
-    Call :meth:`start` once to discover cameras and begin capturing.
-    :meth:`poll_for_changes` can be scheduled periodically to hot-detect
-    newly plugged or removed cameras.
+    Supports three kinds of sources:
+    - **V4L2** (auto-discovered): USB cameras via ``/dev/video*``
+    - **stream** (manual config): RTSP, HTTP MJPEG, etc.
+    - **file** (manual config): local video files for development/testing
     """
 
     def __init__(self, settings: Settings) -> None:
@@ -41,15 +42,41 @@ class CameraManager:
         return dict(self._captures)
 
     def start(self) -> list[CameraInfo]:
-        """Discover cameras and start capture threads. Returns discovered list."""
-        cam_settings = self._settings.camera
-        infos = discover_usb_cameras(
-            default_resolution=cam_settings.default_resolution,
-            default_fps=cam_settings.default_fps,
-        )
-        for info in infos:
-            self._start_camera(info)
-        return infos
+        """Discover/configure cameras and start capture threads."""
+        started: list[CameraInfo] = []
+
+        # 1. Manually configured sources (streams, files, explicit V4L2)
+        for src in self._settings.camera.sources:
+            source_type = CameraSourceType(src.type)
+            device_path = src.url if source_type == CameraSourceType.STREAM else src.path
+            if source_type == CameraSourceType.V4L2 and src.path:
+                device_path = src.path
+
+            info = CameraInfo(
+                camera_id=src.id,
+                source_type=source_type,
+                device_path=device_path,
+                name=f"Manual: {src.id}",
+                resolution=src.resolution,
+                fps=src.fps,
+                loop=src.loop,
+            )
+            if self._start_camera(info):
+                started.append(info)
+
+        # 2. V4L2 auto-discovery (skip devices already covered by manual config)
+        if self._settings.camera.auto_discover:
+            cam_settings = self._settings.camera
+            infos = discover_usb_cameras(
+                default_resolution=cam_settings.default_resolution,
+                default_fps=cam_settings.default_fps,
+            )
+            for info in infos:
+                if info and info.camera_id not in self._captures:
+                    if self._start_camera(info):
+                        started.append(info)
+
+        return started
 
     def stop(self) -> None:
         for cap in self._captures.values():
@@ -59,37 +86,47 @@ class CameraManager:
         logger.info("camera_manager_stopped")
 
     def poll_for_changes(self) -> None:
-        """Detect newly plugged / unplugged cameras without disturbing active ones.
+        """Detect newly plugged / unplugged V4L2 cameras.
 
-        Instead of re-running full discovery (which would try to open devices
-        already held by capture threads and fail on V4L2's single-open
-        constraint), we check the device nodes in ``/dev`` directly and only
-        run discovery for **new** nodes.
+        Does not affect manually configured sources (stream/file).
         """
         cam_settings = self._settings.camera
 
-        # Cheap filesystem check: which /dev/video* nodes exist right now?
-        current_dev_paths = {str(p) for p in sorted(Path("/dev").glob("video*"))}
+        # Only check capture thread health for non-V4L2 sources.
+        for cam_id, cap in list(self._captures.items()):
+            if not cap.is_running:
+                info = self._camera_infos.get(cam_id)
+                src_type = info.source_type if info else "unknown"
+                logger.warning(
+                    "camera_capture_died",
+                    camera_id=cam_id,
+                    source_type=src_type,
+                )
+                self._stop_camera(cam_id)
 
-        # Which device paths do we already manage?
-        active_dev_paths = {
-            info.device_path for info in self._camera_infos.values()
+        # V4L2 hot-plug detection.
+        if not cam_settings.auto_discover:
+            return
+
+        current_dev_paths = {str(p) for p in sorted(Path("/dev").glob("video*"))}
+        active_v4l2_paths = {
+            info.device_path
+            for info in self._camera_infos.values()
+            if info.source_type == CameraSourceType.V4L2
         }
 
-        # --- Detect removed cameras (device node disappeared) ---
+        # Detect removed V4L2 cameras.
         for cam_id, info in list(self._camera_infos.items()):
-            if info.device_path not in current_dev_paths:
+            is_removed = (
+                info.source_type == CameraSourceType.V4L2
+                and info.device_path not in current_dev_paths
+            )
+            if is_removed:
                 logger.info("camera_removed", camera_id=cam_id)
                 self._stop_camera(cam_id)
 
-        # --- Detect removed cameras (capture thread died) ---
-        for cam_id, cap in list(self._captures.items()):
-            if not cap.is_running:
-                logger.warning("camera_capture_died", camera_id=cam_id)
-                self._stop_camera(cam_id)
-
-        # --- Detect new cameras (device node appeared, not yet managed) ---
-        new_dev_paths = current_dev_paths - active_dev_paths
+        # Detect new V4L2 cameras.
+        new_dev_paths = current_dev_paths - active_v4l2_paths
         if new_dev_paths:
             logger.info("new_device_nodes_detected", paths=sorted(new_dev_paths))
             new_cameras = discover_usb_cameras(
@@ -97,9 +134,10 @@ class CameraManager:
                 default_fps=cam_settings.default_fps,
             )
             for info in new_cameras:
-                if info.camera_id not in self._captures:
-                    logger.info("new_camera_detected", camera_id=info.camera_id)
-                    self._start_camera(info)
+                if info.camera_id in self._captures:
+                    continue
+                logger.info("new_camera_detected", camera_id=info.camera_id)
+                self._start_camera(info)
 
     async def run_polling_loop(self) -> None:
         """Async loop that periodically checks for camera changes."""
@@ -108,17 +146,23 @@ class CameraManager:
             await asyncio.sleep(interval)
             self.poll_for_changes()
 
-    def _start_camera(self, info: CameraInfo) -> None:
+    def _start_camera(self, info: CameraInfo) -> bool:
         capture = CameraCapture(info)
         try:
             capture.start()
             info.status = CameraStatus.ACTIVE
-        except RuntimeError:
-            logger.error("camera_start_failed", camera_id=info.camera_id)
+        except (RuntimeError, ValueError) as exc:
+            logger.error(
+                "camera_start_failed",
+                camera_id=info.camera_id,
+                source_type=info.source_type,
+                error=str(exc),
+            )
             info.status = CameraStatus.ERROR
-            return
+            return False
         self._captures[info.camera_id] = capture
         self._camera_infos[info.camera_id] = info
+        return True
 
     def _stop_camera(self, camera_id: str) -> None:
         cap = self._captures.pop(camera_id, None)

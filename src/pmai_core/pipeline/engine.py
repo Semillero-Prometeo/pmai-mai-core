@@ -93,7 +93,9 @@ class PipelineEngine:
                 self._frame_counter.setdefault(cam_id, 0)
                 self._frame_counter[cam_id] += 1
 
-                detections = self._detector.detect(frame)
+                detections = await asyncio.to_thread(
+                    self._detector.detect, frame,
+                )
 
                 tracked = self._trackers[cam_id].update(detections)
 
@@ -104,7 +106,7 @@ class PipelineEngine:
                 )
 
                 if do_reid:
-                    self._apply_reid(frame, tracked)
+                    await asyncio.to_thread(self._apply_reid, frame, tracked)
 
                 await self._publish_events(tracked, cam_id)
 

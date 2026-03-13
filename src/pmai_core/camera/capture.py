@@ -1,4 +1,10 @@
-"""Threaded per-camera frame capture with a bounded queue."""
+"""Threaded per-camera frame capture with a bounded queue.
+
+Supports three source types:
+- **V4L2**: local USB camera via ``/dev/video*`` (production on real hardware)
+- **stream**: network URL — RTSP, HTTP MJPEG, etc. (development / IP cameras)
+- **file**: local video file, optionally looped (testing / offline development)
+"""
 
 from __future__ import annotations
 
@@ -14,6 +20,8 @@ import numpy as np
 import structlog
 from numpy.typing import NDArray
 
+from pmai_core.domain.camera import CameraSourceType
+
 if TYPE_CHECKING:
     from pmai_core.domain.camera import CameraInfo
 
@@ -23,12 +31,65 @@ FrameType = NDArray[np.uint8]
 
 QUEUE_MAX_SIZE = 4
 
-# MJPEG fourcc — the most reliable pixel format through WSL2 / Docker.
 _MJPEG_FOURCC = cv2.VideoWriter.fourcc(*"MJPG")
+
+_MAX_CONSECUTIVE_FAILURES = 300
+
+
+def _open_v4l2(info: CameraInfo) -> cv2.VideoCapture:
+    """Open a V4L2 device by index, configure resolution/fps."""
+    idx_match = re.search(r"\d+$", info.device_path)
+    if idx_match is None:
+        raise ValueError(f"Cannot parse device index from {info.device_path}")
+    idx = int(idx_match.group())
+
+    cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open V4L2 camera {info.device_path}")
+
+    cap.set(cv2.CAP_PROP_FOURCC, _MJPEG_FOURCC)
+    w, h = info.resolution
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+    cap.set(cv2.CAP_PROP_FPS, info.fps)
+    return cap
+
+
+def _open_stream(info: CameraInfo) -> cv2.VideoCapture:
+    """Open a network stream (RTSP, HTTP MJPEG, etc.)."""
+    url = info.device_path
+    if not url:
+        raise ValueError(f"Camera {info.camera_id}: stream URL is empty")
+
+    cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+    if not cap.isOpened():
+        cap = cv2.VideoCapture(url)
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open stream {url}")
+    return cap
+
+
+def _open_file(info: CameraInfo) -> cv2.VideoCapture:
+    """Open a local video file."""
+    path = info.device_path
+    if not path:
+        raise ValueError(f"Camera {info.camera_id}: file path is empty")
+
+    cap = cv2.VideoCapture(path)
+    if not cap.isOpened():
+        raise RuntimeError(f"Cannot open video file {path}")
+    return cap
+
+
+_OPENERS = {
+    CameraSourceType.V4L2: _open_v4l2,
+    CameraSourceType.STREAM: _open_stream,
+    CameraSourceType.FILE: _open_file,
+}
 
 
 class CameraCapture:
-    """Reads frames from a single USB camera in a background thread.
+    """Reads frames from a camera source in a background thread.
 
     Each captured frame is pushed to an internal ``Queue`` that the pipeline
     engine consumes.  If the queue is full the oldest frame is silently
@@ -53,23 +114,11 @@ class CameraCapture:
         return self._running.is_set()
 
     def start(self) -> None:
-        idx_match = re.search(r"\d+$", self._info.device_path)
-        if idx_match is None:
-            raise ValueError(f"Cannot parse device index from {self._info.device_path}")
-        idx = int(idx_match.group())
+        opener = _OPENERS.get(self._info.source_type)
+        if opener is None:
+            raise ValueError(f"Unsupported source type: {self._info.source_type}")
 
-        self._cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
-        if not self._cap.isOpened():
-            raise RuntimeError(f"Cannot open camera {self._info.device_path}")
-
-        # Force MJPEG — avoids select() timeouts on WSL2 / Docker where
-        # raw YUYV negotiation is unreliable.
-        self._cap.set(cv2.CAP_PROP_FOURCC, _MJPEG_FOURCC)
-
-        w, h = self._info.resolution
-        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
-        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
-        self._cap.set(cv2.CAP_PROP_FPS, self._info.fps)
+        self._cap = opener(self._info)
 
         self._running.set()
         self._thread = threading.Thread(
@@ -78,7 +127,12 @@ class CameraCapture:
             daemon=True,
         )
         self._thread.start()
-        logger.info("camera_capture_started", camera_id=self.camera_id)
+        logger.info(
+            "camera_capture_started",
+            camera_id=self.camera_id,
+            source_type=self._info.source_type,
+            source=self._info.device_path,
+        )
 
     def stop(self) -> None:
         self._running.clear()
@@ -100,16 +154,28 @@ class CameraCapture:
         assert self._cap is not None
         while self._running.is_set():
             ret, frame = self._cap.read()
+
             if not ret or frame is None:
+                # For file sources, loop back to the beginning.
+                if self._info.source_type == CameraSourceType.FILE and self._info.loop:
+                    self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    continue
+
                 self._consecutive_failures += 1
+                if self._consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
+                    logger.error(
+                        "camera_giving_up",
+                        camera_id=self.camera_id,
+                        failures=self._consecutive_failures,
+                    )
+                    self._running.clear()
+                    return
                 if self._consecutive_failures % 50 == 0:
                     logger.error(
                         "frame_read_failed_many_times",
                         camera_id=self.camera_id,
                         failures=self._consecutive_failures,
                     )
-                else:
-                    logger.warning("frame_read_failed", camera_id=self.camera_id)
                 time.sleep(0.05)
                 continue
 
@@ -124,11 +190,16 @@ class CameraCapture:
 
             self._consecutive_failures = 0
 
+            typed_frame: FrameType = np.asarray(frame, dtype=np.uint8)
             ts = time.time()
             try:
-                self._queue.put_nowait((frame, ts))
+                self._queue.put_nowait((typed_frame, ts))
             except Full:
                 with contextlib.suppress(Exception):
                     self._queue.get_nowait()
                 with contextlib.suppress(Full):
-                    self._queue.put_nowait((frame, ts))
+                    self._queue.put_nowait((typed_frame, ts))
+
+            # Throttle file-based sources to approximate real-time playback.
+            if self._info.source_type == CameraSourceType.FILE and self._info.fps > 0:
+                time.sleep(1.0 / self._info.fps)

@@ -17,11 +17,24 @@ class AppSettings(BaseModel):
     log_level: str = "INFO"
 
 
+class CameraSourceConfig(BaseModel):
+    """Manual camera source definition (stream or file)."""
+
+    id: str
+    type: str = "stream"
+    url: str = ""
+    path: str = ""
+    resolution: tuple[int, int] = (640, 480)
+    fps: int = 15
+    loop: bool = False
+
+
 class CameraSettings(BaseModel):
     auto_discover: bool = True
     poll_interval_seconds: int = 10
     default_resolution: tuple[int, int] = (640, 480)
     default_fps: int = 15
+    sources: list[CameraSourceConfig] = []
 
 
 class VisionSettings(BaseModel):
@@ -88,4 +101,9 @@ class Settings(BaseModel):
             res = cam.get("default_resolution")
             if isinstance(res, list) and len(res) == 2:
                 cam["default_resolution"] = tuple(res)
+            for src in cam.get("sources", []):
+                if isinstance(src, dict):
+                    src_res = src.get("resolution")
+                    if isinstance(src_res, list) and len(src_res) == 2:
+                        src["resolution"] = tuple(src_res)
         return values
