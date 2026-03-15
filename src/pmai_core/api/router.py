@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pmai_core import __version__
 from pmai_core.camera.manager import CameraManager
 from pmai_core.pipeline.engine import PipelineEngine
+from pmai_core.pipeline.global_objects import compute_global_objects_for_context
 from pmai_core.vision.overlay import draw_detections
 
 
@@ -71,36 +72,20 @@ def create_api(
 
     @app.get("/objects/tracked")
     async def objects_tracked() -> JSONResponse:
-        """Return current tracked objects in the canonical schema:
+        """Return current global objects (one per id_global), deduplicated.
 
-        { id, id_global, etiqueta, contexto, sensores, camera_id, confidence, bbox }
-
+        Schema: id_global, etiqueta, confianza, contexto, sensores, cameras_seen, etc.
         This is the structured output that the LLM contextualizer will consume.
         """
         if pipeline_engine is None:
-            return JSONResponse({"objects": []})
-        result: list[dict[str, Any]] = []
-        for cam_id, data in pipeline_engine.all_last_annotated.items():
-            _, tracked = data
-            for obj in tracked:
-                cameras = (
-                    pipeline_engine.registry.get_cameras_for_identity(obj.global_id)
-                    if obj.global_id
-                    else []
-                )
-                result.append({
-                    "id": obj.id,
-                    "id_global": obj.global_id or None,
-                    "etiqueta": obj.label,
-                    "confianza": round(obj.confidence, 3),
-                    "contexto": obj.context,
-                    "sensores": obj.sensors,
-                    "camera_id": cam_id,
-                    "bbox": obj.bbox.to_xyxy(),
-                    "cameras_seen": sorted(cameras),
-                    "cross_camera": len(cameras) > 1,
-                })
-        return JSONResponse({"count": len(result), "objects": result})
+            return JSONResponse({"count": 0, "objects": []})
+        annotated = pipeline_engine.all_last_annotated
+        registry = pipeline_engine.registry
+        global_objects = compute_global_objects_for_context(annotated, registry)
+        return JSONResponse({
+            "count": len(global_objects),
+            "objects": [o.model_dump() for o in global_objects],
+        })
 
     @app.get("/reid/status")
     async def reid_status() -> JSONResponse:

@@ -13,8 +13,10 @@ import numpy as np
 import structlog
 from numpy.typing import NDArray
 
+from pmai_core.domain.context_object import GlobalObjectForContext
 from pmai_core.domain.events import ObjectDetectedEvent, ObjectReIdentifiedEvent
 from pmai_core.domain.tracked_object import TrackedObject
+from pmai_core.pipeline.global_objects import compute_global_objects_for_context
 from pmai_core.reid.extractor import EmbeddingExtractor
 from pmai_core.reid.matcher import CosineMatcher
 from pmai_core.reid.registry import GlobalRegistry
@@ -23,6 +25,7 @@ from pmai_core.vision.detector import YOLODetector
 from pmai_core.vision.tracker import ObjectTracker
 
 if TYPE_CHECKING:
+    from pmai_core.camera.capture import CameraCapture
     from pmai_core.camera.manager import CameraManager
     from pmai_core.messaging.client import NATSClient
 
@@ -82,7 +85,7 @@ class PipelineEngine:
         return self._last_annotated.get(camera_id)
 
     async def run(self) -> None:
-        """Main async loop -- process frames from all cameras continuously."""
+        """Main async loop: phases of observation, ReID, then future context/LLM."""
         self._running = True
         logger.info("pipeline_started")
 
@@ -92,47 +95,65 @@ class PipelineEngine:
                 await asyncio.sleep(0.5)
                 continue
 
-            processed_any = False
-            for cam_id, capture in captures.items():
-                result = capture.get_frame(timeout=0.05)
-                if result is None:
-                    continue
+            # --- Phase 1: observation + reidentification ---
+            processed_any = await self._run_phase_observation_reid(captures)
 
-                frame, timestamp = result
-                processed_any = True
-                if cam_id not in self._trackers:
-                    self._trackers[cam_id] = ObjectTracker(camera_id=cam_id)
-                self._frame_counter.setdefault(cam_id, 0)
-                self._frame_counter[cam_id] += 1
-
-                frame_idx = self._frame_counter[cam_id]
-                reid_interval = self._settings.reid.embedding_update_interval
-                do_reid = self._extractor.is_available and (
-                    frame_idx == 1 or frame_idx % reid_interval == 0
+            # Global objects for context (output of phase 1, input to future phases)
+            global_objects: list[GlobalObjectForContext] = (
+                compute_global_objects_for_context(
+                    self._last_annotated,
+                    self._registry,
                 )
+            )
+            print(global_objects)
 
-                tracked = await asyncio.to_thread(
-                    self._process_frame_sync,
-                    cam_id,
-                    frame,
-                    frame_idx,
-                    do_reid,
-                )
-
-                self._last_annotated[cam_id] = (frame.copy(), list(tracked))
-
-                # if frame_idx == 1 or frame_idx % 10 == 0:
-                #     self._log_pipeline_summary(cam_id, frame_idx, tracked)
-
-                interval = self._settings.pipeline.result_interval_seconds
-                now = time.monotonic()
-                last = self._last_emit_time.get(cam_id, 0.0)
-                if interval <= 0 or (now - last) >= interval:
-                    await self._publish_events(tracked, cam_id)
-                    self._last_emit_time[cam_id] = now
+            # Future phases (e.g. LLM context) would consume global_objects here
 
             if not processed_any:
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.05)
+
+    async def _run_phase_observation_reid(
+        self,
+        captures: dict[str, CameraCapture],
+    ) -> bool:
+        """Phase 1: capture frames, detect, track, ReID; update state and publish events."""
+        processed_any = False
+        for cam_id, capture in captures.items():
+            result = capture.get_frame(timeout=0.05)
+            if result is None:
+                continue
+
+            frame, _timestamp = result
+            processed_any = True
+
+            if cam_id not in self._trackers:
+                self._trackers[cam_id] = ObjectTracker(camera_id=cam_id)
+            self._frame_counter.setdefault(cam_id, 0)
+            self._frame_counter[cam_id] += 1
+            frame_idx = self._frame_counter[cam_id]
+
+            reid_interval = self._settings.reid.embedding_update_interval
+            do_reid = self._extractor.is_available and (
+                frame_idx == 1 or frame_idx % reid_interval == 0
+            )
+
+            tracked = await asyncio.to_thread(
+                self._process_frame_sync,
+                cam_id,
+                frame,
+                frame_idx,
+                do_reid,
+            )
+            self._last_annotated[cam_id] = (frame.copy(), list(tracked))
+
+            interval = self._settings.pipeline.result_interval_seconds
+            now = time.monotonic()
+            last = self._last_emit_time.get(cam_id, 0.0)
+            if interval <= 0 or (now - last) >= interval:
+                await self._publish_events(tracked, cam_id)
+                self._last_emit_time[cam_id] = now
+
+        return processed_any
 
     def stop(self) -> None:
         self._running = False
