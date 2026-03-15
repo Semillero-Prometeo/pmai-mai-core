@@ -77,9 +77,9 @@ class APISettings(BaseModel):
 class PipelineSettings(BaseModel):
     """Configuration for the main processing loop."""
 
-    # If > 0, sleep this many seconds between iterations of the main loop.
-    # If 0, the loop runs as fast as possible (original behaviour).
-    loop_interval_seconds: float = 0.0
+    # Interval in seconds between emitting results (NATS + view state).
+    # Camera stays open; only the delivery of detections/ReID is throttled.
+    result_interval_seconds: float = 5.0
 
 
 class Settings(BaseModel):

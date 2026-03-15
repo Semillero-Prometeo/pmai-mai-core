@@ -132,6 +132,7 @@ class CameraManager:
             new_cameras = discover_usb_cameras(
                 default_resolution=cam_settings.default_resolution,
                 default_fps=cam_settings.default_fps,
+                only_paths=new_dev_paths,
             )
             for info in new_cameras:
                 if info.camera_id in self._captures:

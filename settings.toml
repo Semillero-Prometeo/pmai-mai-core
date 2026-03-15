@@ -6,7 +6,7 @@ log_level = "INFO"
 # V4L2 auto-discovery works on native Linux (production mini-PC).
 # In WSL2+Docker, V4L2 streaming is broken (VHCI isochronous limitation).
 # Set to false and use [[camera.sources]] instead for development.
-auto_discover = false
+auto_discover = true
 poll_interval_seconds = 10
 default_resolution = [640, 480]
 default_fps = 15
@@ -29,12 +29,12 @@ default_fps = 15
 # url = "rtsp://host.docker.internal:8554/live"
 
 # Option C: Local video file for offline testing.
-[[camera.sources]]
-id = "test_cam_1"
-type = "file"
-path = "/data/test_video.mp4"
-fps = 15
-loop = true
+# [[camera.sources]]
+# id = "test_cam_1"
+# type = "file"
+# path = "/data/test_video.mp4"
+# fps = 15
+# loop = true
 
 # Option D: Second file to test cross-camera ReID.
 # [[camera.sources]]
@@ -56,9 +56,9 @@ embedding_update_interval = 5
 gallery_max_size = 1000
 
 [pipeline]
-# Seconds to wait between iterations of the main `run` loop.
-# 0.0 means "lo más rápido posible".
-loop_interval_seconds = 5.0
+# Interval between emitting identification results (NATS + visualization).
+# Camera remains open; only result delivery is throttled.
+result_interval_seconds = 5.0
 
 [nats]
 url = "nats://localhost:4222"

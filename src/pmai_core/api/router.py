@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import FastAPI
+import cv2
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse, Response
 
 from pmai_core import __version__
+from pmai_core.vision.overlay import draw_detections
 
 
 def create_api(
@@ -62,5 +65,48 @@ def create_api(
         return {
             "active_cameras": list(pipeline_engine.trackers.keys()),
         }
+
+    @app.get("/cameras/{camera_id}/view", response_class=Response)
+    async def camera_view(camera_id: str) -> Response:
+        """Return the latest annotated frame (YOLO + ReID) as JPEG."""
+        if pipeline_engine is None:
+            raise HTTPException(status_code=503, detail="Pipeline not available")
+        data = pipeline_engine.get_last_annotated(camera_id)
+        if data is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No annotated frame for camera {camera_id}",
+            )
+        frame, tracked = data
+        annotated = draw_detections(frame, tracked)
+        _, jpeg = cv2.imencode(".jpg", annotated)
+        return Response(
+            content=jpeg.tobytes(),
+            media_type="image/jpeg",
+        )
+
+    @app.get("/view", response_class=HTMLResponse)
+    async def view_page() -> HTMLResponse:
+        """HTML page that shows the first available camera view with auto-refresh."""
+        if camera_manager is None or not camera_manager.cameras:
+            return HTMLResponse(
+                "<html><body><p>No cameras available.</p></body></html>",
+                status_code=200,
+            )
+        first_cam_id = next(iter(camera_manager.cameras)).camera_id
+        html = f"""<!DOCTYPE html>
+<html>
+<head><title>PMAI View</title></head>
+<body>
+  <h1>Camera: {first_cam_id}</h1>
+  <img id="img" src="/cameras/{first_cam_id}/view" alt="Camera view" />
+  <script>
+    setInterval(function() {{
+      document.getElementById("img").src = "/cameras/{first_cam_id}/view?t=" + Date.now();
+    }}, 2000);
+  </script>
+</body>
+</html>"""
+        return HTMLResponse(html)
 
     return app

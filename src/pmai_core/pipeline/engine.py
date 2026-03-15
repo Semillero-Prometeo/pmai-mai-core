@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -58,6 +59,8 @@ class PipelineEngine:
         )
 
         self._frame_counter: dict[str, int] = {}
+        self._last_result_emit_time: float = 0.0
+        self._last_annotated: dict[str, tuple[NDArray[np.uint8], list[TrackedObject]]] = {}
         self._running = False
 
     @property
@@ -67,6 +70,12 @@ class PipelineEngine:
     @property
     def trackers(self) -> dict[str, ObjectTracker]:
         return dict(self._trackers)
+
+    def get_last_annotated(
+        self, camera_id: str
+    ) -> tuple[NDArray[np.uint8], list[TrackedObject]] | None:
+        """Return the latest (frame, tracked_objects) for a camera, or None."""
+        return self._last_annotated.get(camera_id)
 
     async def run(self) -> None:
         """Main async loop – process frames from all cameras continuously."""
@@ -148,14 +157,16 @@ class PipelineEngine:
                         ],
                     )
 
-                await self._publish_events(tracked, cam_id)
+                # Emit results (NATS + view state) only every result_interval_seconds.
+                interval = self._settings.pipeline.result_interval_seconds
+                now = time.monotonic()
+                if interval <= 0 or (now - self._last_result_emit_time) >= interval:
+                    await self._publish_events(tracked, cam_id)
+                    self._last_result_emit_time = now
+                    # Update last annotated for visualization (step 3).
+                    self._last_annotated[cam_id] = (frame.copy(), list(tracked))
 
-            interval = self._settings.pipeline.loop_interval_seconds
-            if interval > 0:
-                # Configured pacing for the whole pipeline.
-                await asyncio.sleep(interval)
-            elif not processed_any:
-                # No frames were processed – yield briefly to avoid busy-waiting.
+            if not processed_any:
                 await asyncio.sleep(0.01)
 
     def stop(self) -> None:

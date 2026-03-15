@@ -116,19 +116,26 @@ def _can_open_with_opencv(device_path: str) -> bool:
 def discover_usb_cameras(
     default_resolution: tuple[int, int] = (640, 480),
     default_fps: int = 15,
+    only_paths: set[str] | None = None,
 ) -> list[CameraInfo]:
     """Scan the system for USB cameras and return validated ``CameraInfo`` list.
 
     Strategy
     --------
-    1. Enumerate ``/dev/video*`` device nodes.
+    1. Enumerate ``/dev/video*`` device nodes (or only those in ``only_paths``).
     2. Filter through V4L2 to keep only capture-capable devices.
     3. Validate each with ``cv2.VideoCapture.isOpened()``.
+
+    When ``only_paths`` is set (e.g. for hot-plug), only devices in that set
+    are considered, so already-open devices are not touched.
     """
     raw_devices = sorted(Path("/dev").glob("video*"))
+    if only_paths is not None:
+        raw_devices = [p for p in raw_devices if str(p) in only_paths]
 
     if not raw_devices:
-        logger.info("no_video_devices_found")
+        if only_paths is None:
+            logger.info("no_video_devices_found")
         return []
 
     v4l2_names = _parse_v4l2_devices()
