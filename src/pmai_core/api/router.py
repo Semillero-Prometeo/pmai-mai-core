@@ -10,11 +10,13 @@ from fastapi.responses import HTMLResponse, Response
 
 from pmai_core import __version__
 from pmai_core.vision.overlay import draw_detections
+from pmai_core.camera.manager import CameraManager
+from pmai_core.pipeline.engine import PipelineEngine
 
 
 def create_api(
-    camera_manager: Any = None,
-    pipeline_engine: Any = None,
+    camera_manager: CameraManager | None = None,
+    pipeline_engine: PipelineEngine | None = None,
 ) -> FastAPI:
     """Build the FastAPI app, wiring in live references to the subsystems."""
 
@@ -93,7 +95,7 @@ def create_api(
                 "<html><body><p>No cameras available.</p></body></html>",
                 status_code=200,
             )
-        first_cam_id = next(iter(camera_manager.cameras)).camera_id
+        first_cam_id = next(iter(camera_manager.cameras))
         html = f"""<!DOCTYPE html>
             <html>
             <head><title>PMAI View</title></head>
