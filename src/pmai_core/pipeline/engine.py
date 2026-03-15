@@ -1,6 +1,6 @@
 """PipelineEngine – orchestrates the full processing flow.
 
-    cameras -> detect -> track -> extract embeddings -> cross-camera match -> publish
+cameras -> detect -> track -> extract embeddings -> cross-camera match -> publish
 """
 
 from __future__ import annotations
@@ -57,9 +57,7 @@ class PipelineEngine:
 
         self._frame_counter: dict[str, int] = {}
         self._last_emit_time: dict[str, float] = {}
-        self._last_annotated: dict[
-            str, tuple[NDArray[np.uint8], list[TrackedObject]]
-        ] = {}
+        self._last_annotated: dict[str, tuple[NDArray[np.uint8], list[TrackedObject]]] = {}
         self._running = False
 
     @property
@@ -115,13 +113,16 @@ class PipelineEngine:
 
                 tracked = await asyncio.to_thread(
                     self._process_frame_sync,
-                    cam_id, frame, frame_idx, do_reid,
+                    cam_id,
+                    frame,
+                    frame_idx,
+                    do_reid,
                 )
 
                 self._last_annotated[cam_id] = (frame.copy(), list(tracked))
 
-                if frame_idx == 1 or frame_idx % 10 == 0:
-                    self._log_pipeline_summary(cam_id, frame_idx, tracked)
+                # if frame_idx == 1 or frame_idx % 10 == 0:
+                #     self._log_pipeline_summary(cam_id, frame_idx, tracked)
 
                 interval = self._settings.pipeline.result_interval_seconds
                 now = time.monotonic()
@@ -149,37 +150,29 @@ class PipelineEngine:
         All CPU-bound inference (YOLO via PyTorch and ReID via ONNX Runtime)
         runs inside a single thread to avoid cross-library thread-pool deadlocks.
         """
-        t0 = time.monotonic()
+        # t0 = time.monotonic()
         detections = self._detector.detect(frame)
-        t1 = time.monotonic()
+        # t1 = time.monotonic()
         tracked = self._trackers[cam_id].update(detections)
-        t2 = time.monotonic()
+        # t2 = time.monotonic()
 
         if do_reid and tracked:
             for obj in tracked:
                 embedding = self._extractor.extract(frame, obj.bbox)
                 if embedding is not None:
                     obj.embedding = embedding
-            t3 = time.monotonic()
+            # t3 = time.monotonic()
             self._matcher.match(tracked, camera_id=cam_id)
-            t4 = time.monotonic()
-            logger.debug(
-                "frame_timings",
-                camera_id=cam_id,
-                frame_idx=frame_idx,
-                yolo_ms=round((t1 - t0) * 1000),
-                track_ms=round((t2 - t1) * 1000),
-                embed_ms=round((t3 - t2) * 1000),
-                match_ms=round((t4 - t3) * 1000),
-            )
-        else:
-            logger.debug(
-                "frame_timings",
-                camera_id=cam_id,
-                frame_idx=frame_idx,
-                yolo_ms=round((t1 - t0) * 1000),
-                track_ms=round((t2 - t1) * 1000),
-            )
+            # t4 = time.monotonic()
+            # logger.debug(
+            #     "frame_timings",
+            #     camera_id=cam_id,
+            #     frame_idx=frame_idx,
+            #     yolo_ms=round((t1 - t0) * 1000),
+            #     track_ms=round((t2 - t1) * 1000),
+            #     embed_ms=round((t3 - t2) * 1000),
+            #     match_ms=round((t4 - t3) * 1000),
+            # )
 
         return tracked
 
@@ -203,9 +196,7 @@ class PipelineEngine:
                     "conf": round(o.confidence, 2),
                     "global_id": o.global_id or "-",
                     "cameras_seen": (
-                        self._registry.get_cameras_for_identity(o.global_id)
-                        if o.global_id
-                        else []
+                        self._registry.get_cameras_for_identity(o.global_id) if o.global_id else []
                     ),
                 }
                 for o in tracked

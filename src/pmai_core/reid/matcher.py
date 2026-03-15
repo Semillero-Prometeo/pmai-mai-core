@@ -46,25 +46,25 @@ class CosineMatcher:
                 self._registry.update(
                     best_id, obj.embedding, camera_id=camera_id,
                 )
-                logger.debug(
-                    "reid_matched_existing",
-                    track_id=obj.id,
-                    global_id=best_id,
-                    score=round(best_score, 3),
-                    camera_id=camera_id,
-                )
+                # logger.debug(
+                #     "reid_matched_existing",
+                #     track_id=obj.id,
+                #     global_id=best_id,
+                #     score=round(best_score, 3),
+                #     camera_id=camera_id,
+                # )
             else:
                 new_id = self._registry.register(
                     obj.embedding, obj.label, camera_id=camera_id,
                 )
                 obj.global_id = new_id
-                logger.debug(
-                    "reid_new_identity",
-                    track_id=obj.id,
-                    global_id=new_id,
-                    best_existing_score=round(best_score, 3) if best_id else None,
-                    camera_id=camera_id,
-                )
+                # logger.debug(
+                #     "reid_new_identity",
+                #     track_id=obj.id,
+                #     global_id=new_id,
+                #     best_existing_score=round(best_score, 3) if best_id else None,
+                #     camera_id=camera_id,
+                # )
 
         return objects
 
