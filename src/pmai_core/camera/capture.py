@@ -152,7 +152,18 @@ class CameraCapture:
 
     def _read_loop(self) -> None:
         assert self._cap is not None
+        read_count = 0
         while self._running.is_set():
+            if self._info.source_type == CameraSourceType.V4L2:
+                read_count += 1
+                if read_count == 1 or (read_count % 100 == 0):
+                    logger.debug(
+                        "v4l2_read_attempt",
+                        camera_id=self.camera_id,
+                        device=self._info.device_path,
+                        location="CameraCapture._read_loop",
+                        read_count=read_count,
+                    )
             ret, frame = self._cap.read()
 
             if not ret or frame is None:
@@ -161,11 +172,23 @@ class CameraCapture:
                     self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     continue
 
+                if self._info.source_type == CameraSourceType.V4L2:
+                    logger.warning(
+                        "v4l2_read_failed",
+                        camera_id=self.camera_id,
+                        device=self._info.device_path,
+                        location="CameraCapture._read_loop",
+                        consecutive_failures=self._consecutive_failures + 1,
+                        hint="OpenCV stderr 'select() timeout' is from this read()",
+                    )
+
                 self._consecutive_failures += 1
                 if self._consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
                     logger.error(
                         "camera_giving_up",
                         camera_id=self.camera_id,
+                        device=self._info.device_path,
+                        location="CameraCapture._read_loop",
                         failures=self._consecutive_failures,
                     )
                     self._running.clear()
@@ -174,6 +197,8 @@ class CameraCapture:
                     logger.error(
                         "frame_read_failed_many_times",
                         camera_id=self.camera_id,
+                        device=self._info.device_path,
+                        location="CameraCapture._read_loop",
                         failures=self._consecutive_failures,
                     )
                 time.sleep(0.05)
