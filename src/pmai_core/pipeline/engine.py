@@ -17,16 +17,16 @@ from pmai_core.domain.context_object import GlobalObjectForContext
 from pmai_core.domain.events import ObjectDetectedEvent, ObjectReIdentifiedEvent
 from pmai_core.domain.tracked_object import TrackedObject
 from pmai_core.pipeline.global_objects import compute_global_objects_for_context
-from pmai_core.reid.extractor import EmbeddingExtractor
-from pmai_core.reid.matcher import CosineMatcher
-from pmai_core.reid.registry import GlobalRegistry
+from pmai_core.resources.reid.extractor import EmbeddingExtractor
+from pmai_core.resources.reid.matcher import CosineMatcher
+from pmai_core.resources.reid.registry import GlobalRegistry
 from pmai_core.settings import Settings
-from pmai_core.vision.detector import YOLODetector
-from pmai_core.vision.tracker import ObjectTracker
+from pmai_core.resources.vision.detector import YOLODetector
+from pmai_core.resources.vision.tracker import ObjectTracker
 
 if TYPE_CHECKING:
-    from pmai_core.camera.capture import CameraCapture
-    from pmai_core.camera.manager import CameraManager
+    from pmai_core.resources.camera.capture import CameraCapture
+    from pmai_core.resources.camera.manager import CameraManager
     from pmai_core.messaging.client import NATSClient
 
 logger = structlog.get_logger(__name__)
@@ -99,11 +99,9 @@ class PipelineEngine:
             processed_any = await self._run_phase_observation_reid(captures)
 
             # Global objects for context (output of phase 1, input to future phases)
-            global_objects: list[GlobalObjectForContext] = (
-                compute_global_objects_for_context(
-                    self._last_annotated,
-                    self._registry,
-                )
+            global_objects: list[GlobalObjectForContext] = compute_global_objects_for_context(
+                self._last_annotated,
+                self._registry,
             )
             print(global_objects)
 
