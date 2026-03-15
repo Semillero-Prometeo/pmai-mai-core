@@ -72,9 +72,8 @@ class CameraManager:
                 default_fps=cam_settings.default_fps,
             )
             for info in infos:
-                if info and info.camera_id not in self._captures:
-                    if self._start_camera(info):
-                        started.append(info)
+                if info and info.camera_id not in self._captures and self._start_camera(info):
+                    started.append(info)
 
         return started
 
@@ -133,6 +132,7 @@ class CameraManager:
                 default_resolution=cam_settings.default_resolution,
                 default_fps=cam_settings.default_fps,
                 only_paths=new_dev_paths,
+                skip_paths=active_v4l2_paths,
             )
             for info in new_cameras:
                 if info.camera_id in self._captures:

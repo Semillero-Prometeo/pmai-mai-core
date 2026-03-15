@@ -105,6 +105,8 @@ def _can_open_with_opencv(device_path: str) -> bool:
     idx = int(idx_match.group())
 
     cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
+
     opened = cap.isOpened()
     cap.release()
 
@@ -117,17 +119,21 @@ def discover_usb_cameras(
     default_resolution: tuple[int, int] = (640, 480),
     default_fps: int = 15,
     only_paths: set[str] | None = None,
+    skip_paths: set[str] | None = None,
 ) -> list[CameraInfo]:
     """Scan the system for USB cameras and return validated ``CameraInfo`` list.
 
     Strategy
     --------
     1. Enumerate ``/dev/video*`` device nodes (or only those in ``only_paths``).
-    2. Filter through V4L2 to keep only capture-capable devices.
-    3. Validate each with ``cv2.VideoCapture.isOpened()``.
+    2. Skip nodes that belong to the same physical device as one in ``skip_paths``.
+    3. Filter through V4L2 to keep only capture-capable devices.
+    4. Validate each with ``cv2.VideoCapture.isOpened()``.
 
     When ``only_paths`` is set (e.g. for hot-plug), only devices in that set
-    are considered, so already-open devices are not touched.
+    are considered. When ``skip_paths`` is set, any node that shares the same
+    V4L2 card name as a path in ``skip_paths`` is skipped (avoids opening
+    e.g. /dev/video1 when /dev/video0 is already in use for the same camera).
     """
     raw_devices = sorted(Path("/dev").glob("video*"))
     if only_paths is not None:
@@ -139,6 +145,10 @@ def discover_usb_cameras(
         return []
 
     v4l2_names = _parse_v4l2_devices()
+    names_to_skip: set[str] = set()
+    if skip_paths:
+        names_to_skip = {v4l2_names.get(p, "") for p in skip_paths} - {""}
+
     # Si un mismo nombre de dispositivo expone varios nodos (p.ej. /dev/video0
     # y /dev/video1), nos quedamos solo con el de índice más bajo. En muchas
     # webcams USB el segundo nodo suele ser metadata.
@@ -155,6 +165,15 @@ def discover_usb_cameras(
 
     for dev in video_devices:
         dev_str = str(dev)
+        name = v4l2_names.get(dev_str, dev_str)
+        if names_to_skip and name in names_to_skip:
+            logger.debug(
+                "skipping_same_device_node",
+                device=dev_str,
+                name=name,
+                reason="already_managed",
+            )
+            continue
 
         if not _is_capture_device(dev_str):
             logger.debug("skipping_non_capture_device", device=dev_str)
