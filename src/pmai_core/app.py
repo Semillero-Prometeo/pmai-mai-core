@@ -83,7 +83,7 @@ async def run_app(settings: Settings | None = None) -> None:
         asyncio.create_task(api_server.serve(), name="api"),
     ]
 
-    if settings.camera.auto_discover:
+    if settings.camera.auto_discover and settings.camera.source_mode == "v4l2":
         tasks.append(
             asyncio.create_task(camera_manager.run_polling_loop(), name="cam_poll")
         )

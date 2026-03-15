@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tomllib
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, model_validator
 
@@ -30,11 +30,29 @@ class CameraSourceConfig(BaseModel):
 
 
 class CameraSettings(BaseModel):
+    source_mode: Literal["v4l2", "video_folder"] = "v4l2"
     auto_discover: bool = True
     poll_interval_seconds: int = 10
     default_resolution: tuple[int, int] = (640, 480)
     default_fps: int = 15
     sources: list[CameraSourceConfig] = []
+    video_folder_path: str = "/data"
+    video_extensions: list[str] = [".mp4", ".avi", ".mov", ".mkv", ".webm"]
+    video_loop: bool = True
+    video_fps: int = 15
+
+    @model_validator(mode="after")
+    def _normalize_video_extensions(self) -> "CameraSettings":
+        normalized: list[str] = []
+        for ext in self.video_extensions:
+            value = ext.strip().lower()
+            if not value:
+                continue
+            if not value.startswith("."):
+                value = f".{value}"
+            normalized.append(value)
+        self.video_extensions = normalized
+        return self
 
 
 class VisionSettings(BaseModel):

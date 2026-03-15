@@ -9,9 +9,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, Response
 
 from pmai_core import __version__
-from pmai_core.vision.overlay import draw_detections
 from pmai_core.camera.manager import CameraManager
 from pmai_core.pipeline.engine import PipelineEngine
+from pmai_core.vision.overlay import draw_detections
 
 
 def create_api(
@@ -40,6 +40,7 @@ def create_api(
             "cameras": [
                 {
                     "camera_id": info.camera_id,
+                    "source_type": info.source_type.value,
                     "device_path": info.device_path,
                     "name": info.name,
                     "resolution": list(info.resolution),

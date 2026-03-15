@@ -3,17 +3,26 @@ name = "pmai-core"
 log_level = "INFO"
 
 [camera]
-# V4L2 auto-discovery works on native Linux (production mini-PC).
-# In WSL2+Docker, V4L2 streaming is broken (VHCI isochronous limitation).
-# Set to false and use [[camera.sources]] instead for development.
+# Camera source mode:
+# - "v4l2": real USB cameras (production / Linux nativo)
+# - "video_folder": each video in `video_folder_path` is treated as camera usb_0..N
+source_mode = "video_folder"
+
+# V4L2 settings (used when source_mode="v4l2")
 auto_discover = true
 poll_interval_seconds = 10
 default_resolution = [640, 480]
 default_fps = 15
 
+# Video-folder settings (used when source_mode="video_folder")
+video_folder_path = "/data"
+video_extensions = [".mp4", ".avi", ".mov", ".mkv", ".webm"]
+video_loop = true
+video_fps = 15
+
 # --- Manual camera sources ---
-# For development on WSL2, use a stream or video file.
-# In production, set auto_discover = true and remove these.
+# Optional advanced sources (stream/file/v4l2). In "video_folder" mode these are
+# ignored because videos are loaded automatically from `video_folder_path`.
 
 # Option A: IP Webcam Android app (free) → Settings → Start server.
 # Replace <PHONE_IP> with your phone's actual IP on the same network.

@@ -44,9 +44,17 @@ class CameraManager:
     def start(self) -> list[CameraInfo]:
         """Discover/configure cameras and start capture threads."""
         started: list[CameraInfo] = []
+        cam_settings = self._settings.camera
+
+        if cam_settings.source_mode == "video_folder":
+            infos = self._discover_video_folder_sources()
+            for info in infos:
+                if self._start_camera(info):
+                    started.append(info)
+            return started
 
         # 1. Manually configured sources (streams, files, explicit V4L2)
-        for src in self._settings.camera.sources:
+        for src in cam_settings.sources:
             source_type = CameraSourceType(src.type)
             device_path = src.url if source_type == CameraSourceType.STREAM else src.path
             if source_type == CameraSourceType.V4L2 and src.path:
@@ -65,8 +73,7 @@ class CameraManager:
                 started.append(info)
 
         # 2. V4L2 auto-discovery (skip devices already covered by manual config)
-        if self._settings.camera.auto_discover:
-            cam_settings = self._settings.camera
+        if cam_settings.auto_discover:
             infos = discover_usb_cameras(
                 default_resolution=cam_settings.default_resolution,
                 default_fps=cam_settings.default_fps,
@@ -90,6 +97,9 @@ class CameraManager:
         Does not affect manually configured sources (stream/file).
         """
         cam_settings = self._settings.camera
+
+        if cam_settings.source_mode != "v4l2":
+            return
 
         # Only check capture thread health for non-V4L2 sources.
         for cam_id, cap in list(self._captures.items()):
@@ -172,3 +182,44 @@ class CameraManager:
         info = self._camera_infos.pop(camera_id, None)
         if info is not None:
             info.status = CameraStatus.DISCONNECTED
+
+    def _discover_video_folder_sources(self) -> list[CameraInfo]:
+        """Treat each video file in camera.video_folder_path as a camera usb_0..N."""
+        cam_settings = self._settings.camera
+        folder = Path(cam_settings.video_folder_path)
+        if not folder.exists() or not folder.is_dir():
+            logger.warning("video_folder_not_found", path=str(folder))
+            return []
+
+        allowed_exts = set(cam_settings.video_extensions)
+        video_files = sorted(
+            p for p in folder.iterdir()
+            if p.is_file() and p.suffix.lower() in allowed_exts
+        )
+        if not video_files:
+            logger.warning(
+                "video_folder_empty",
+                path=str(folder),
+                allowed_extensions=sorted(allowed_exts),
+            )
+            return []
+
+        infos: list[CameraInfo] = []
+        for idx, video in enumerate(video_files):
+            camera_id = f"usb_{idx}"
+            info = CameraInfo(
+                camera_id=camera_id,
+                source_type=CameraSourceType.FILE,
+                device_path=str(video),
+                name=f"Video Camera {idx}: {video.name}",
+                resolution=cam_settings.default_resolution,
+                fps=cam_settings.video_fps,
+                loop=cam_settings.video_loop,
+            )
+            infos.append(info)
+            logger.info(
+                "video_camera_discovered",
+                camera_id=camera_id,
+                source=str(video),
+            )
+        return infos
