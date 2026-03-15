@@ -95,18 +95,19 @@ def create_api(
             )
         first_cam_id = next(iter(camera_manager.cameras)).camera_id
         html = f"""<!DOCTYPE html>
-<html>
-<head><title>PMAI View</title></head>
-<body>
-  <h1>Camera: {first_cam_id}</h1>
-  <img id="img" src="/cameras/{first_cam_id}/view" alt="Camera view" />
-  <script>
-    setInterval(function() {{
-      document.getElementById("img").src = "/cameras/{first_cam_id}/view?t=" + Date.now();
-    }}, 2000);
-  </script>
-</body>
-</html>"""
+            <html>
+            <head><title>PMAI View</title></head>
+            <body>
+            <h1>Camera: {first_cam_id}</h1>
+            <img id="img" src="/cameras/{first_cam_id}/view" alt="Camera view" />
+            <script>
+                setInterval(function() {{
+                document.getElementById("img").src = "/cameras/{first_cam_id}/view?t=" + Date.now();
+                }}, 2000);
+            </script>
+            </body>
+            </html>"""
+
         return HTMLResponse(html)
 
     return app
