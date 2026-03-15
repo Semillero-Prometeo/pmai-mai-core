@@ -39,7 +39,8 @@ class EmbeddingExtractor:
 
         sess_opts = ort.SessionOptions()
         sess_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-        sess_opts.intra_op_num_threads = 2
+        sess_opts.intra_op_num_threads = 1
+        sess_opts.inter_op_num_threads = 1
 
         self._session = ort.InferenceSession(
             str(model_path),
@@ -47,7 +48,29 @@ class EmbeddingExtractor:
             providers=["CPUExecutionProvider"],
         )
         self._input_name = self._session.get_inputs()[0].name
-        logger.info("reid_extractor_loaded", model=str(model_path))
+        input_shape = self._session.get_inputs()[0].shape
+        self._batch_size: int = int(input_shape[0]) if isinstance(input_shape[0], int) else 1
+
+        self._warmup()
+        logger.info(
+            "reid_extractor_loaded",
+            model=str(model_path),
+            batch_size=self._batch_size,
+        )
+
+    def _warmup(self) -> None:
+        """Run a single dummy inference to initialise ONNX Runtime thread pools.
+
+        This MUST happen before any PyTorch inference to avoid an OpenMP
+        thread-pool deadlock between the two runtimes.
+        """
+        if self._session is None:
+            return
+        input_shape = self._session.get_inputs()[0].shape
+        shape = tuple(d if isinstance(d, int) else 1 for d in input_shape)
+        dummy = np.zeros(shape, dtype=np.float32)
+        self._session.run(None, {self._input_name: dummy})
+        logger.debug("reid_warmup_complete", input_shape=list(input_shape))
 
     @property
     def is_available(self) -> bool:
@@ -63,10 +86,18 @@ class EmbeddingExtractor:
             return None
 
         crop = self._crop_and_preprocess(frame, bbox)
-        outputs = self._session.run(None, {self._input_name: crop})
-        embedding: NDArray[np.float32] = outputs[0].flatten().astype(np.float32)
 
-        # L2-normalise
+        if self._batch_size > 1:
+            padded = np.zeros(
+                (self._batch_size, *crop.shape[1:]), dtype=np.float32,
+            )
+            padded[0] = crop[0]
+            outputs = self._session.run(None, {self._input_name: padded})
+            embedding: NDArray[np.float32] = outputs[0][0].flatten().astype(np.float32)
+        else:
+            outputs = self._session.run(None, {self._input_name: crop})
+            embedding = outputs[0].flatten().astype(np.float32)
+
         norm = np.linalg.norm(embedding)
         if norm > 0:
             embedding = embedding / norm

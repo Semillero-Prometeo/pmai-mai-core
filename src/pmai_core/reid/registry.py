@@ -105,6 +105,10 @@ class GlobalRegistry:
         identity = self._identities.get(global_id)
         return list(identity.cameras_seen) if identity else []
 
+    def get_identity_label(self, global_id: str) -> str:
+        identity = self._identities.get(global_id)
+        return identity.label if identity else ""
+
     def _evict_oldest(self) -> None:
         """Remove the identity with the lowest update count (least observed)."""
         if not self._identities:

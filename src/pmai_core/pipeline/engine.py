@@ -1,6 +1,6 @@
 """PipelineEngine – orchestrates the full processing flow.
 
-    cameras ➜ detect ➜ track ➜ extract embeddings ➜ cross-camera match ➜ publish
+    cameras -> detect -> track -> extract embeddings -> cross-camera match -> publish
 """
 
 from __future__ import annotations
@@ -30,12 +30,7 @@ logger = structlog.get_logger(__name__)
 
 
 class PipelineEngine:
-    """Core processing loop that ties every subsystem together.
-
-    The engine iterates over all active camera captures in a round-robin
-    fashion, runs detection ➜ tracking ➜ ReID on each frame, and publishes
-    resulting events via NATS.
-    """
+    """Core processing loop that ties every subsystem together."""
 
     def __init__(
         self,
@@ -47,10 +42,10 @@ class PipelineEngine:
         self._camera_manager = camera_manager
         self._nats = nats_client
 
-        self._detector = YOLODetector(settings.vision)
-
         self._trackers: dict[str, ObjectTracker] = {}
 
+        # ONNX Runtime (ReID) MUST be initialised before PyTorch (YOLO)
+        # to avoid OpenMP thread-pool deadlocks between the two runtimes.
         self._registry = GlobalRegistry(max_size=settings.reid.gallery_max_size)
         self._extractor = EmbeddingExtractor(settings.reid)
         self._matcher = CosineMatcher(
@@ -58,9 +53,13 @@ class PipelineEngine:
             similarity_threshold=settings.reid.similarity_threshold,
         )
 
+        self._detector = YOLODetector(settings.vision)
+
         self._frame_counter: dict[str, int] = {}
-        self._last_result_emit_time: float = 0.0
-        self._last_annotated: dict[str, tuple[NDArray[np.uint8], list[TrackedObject]]] = {}
+        self._last_emit_time: dict[str, float] = {}
+        self._last_annotated: dict[
+            str, tuple[NDArray[np.uint8], list[TrackedObject]]
+        ] = {}
         self._running = False
 
     @property
@@ -71,6 +70,13 @@ class PipelineEngine:
     def trackers(self) -> dict[str, ObjectTracker]:
         return dict(self._trackers)
 
+    @property
+    def all_last_annotated(
+        self,
+    ) -> dict[str, tuple[NDArray[np.uint8], list[TrackedObject]]]:
+        """Return annotated state for all cameras."""
+        return dict(self._last_annotated)
+
     def get_last_annotated(
         self, camera_id: str
     ) -> tuple[NDArray[np.uint8], list[TrackedObject]] | None:
@@ -78,7 +84,7 @@ class PipelineEngine:
         return self._last_annotated.get(camera_id)
 
     async def run(self) -> None:
-        """Main async loop – process frames from all cameras continuously."""
+        """Main async loop -- process frames from all cameras continuously."""
         self._running = True
         logger.info("pipeline_started")
 
@@ -90,81 +96,39 @@ class PipelineEngine:
 
             processed_any = False
             for cam_id, capture in captures.items():
-                result = capture.get_frame(timeout=0.01)
+                result = capture.get_frame(timeout=0.05)
                 if result is None:
                     continue
 
                 frame, timestamp = result
                 processed_any = True
-
                 if cam_id not in self._trackers:
                     self._trackers[cam_id] = ObjectTracker(camera_id=cam_id)
                 self._frame_counter.setdefault(cam_id, 0)
                 self._frame_counter[cam_id] += 1
 
-                frame_index = self._frame_counter[cam_id]
-
-                # --- Detection (YOLO) ---
-                detections = await asyncio.to_thread(
-                    self._detector.detect, frame,
-                )
-
-                if frame_index % 10 == 0:
-                    logger.info(
-                        "detection_summary",
-                        camera_id=cam_id,
-                        frame_index=frame_index,
-                        num_detections=len(detections),
-                        labels=[d.label for d in detections],
-                    )
-
-                tracked = self._trackers[cam_id].update(detections)
-
-                if frame_index % 10 == 0:
-                    logger.info(
-                        "tracking_summary",
-                        camera_id=cam_id,
-                        frame_index=frame_index,
-                        num_tracks=len(tracked),
-                        track_ids=[obj.id for obj in tracked],
-                    )
-
+                frame_idx = self._frame_counter[cam_id]
                 reid_interval = self._settings.reid.embedding_update_interval
-                do_reid = (
-                    self._extractor.is_available
-                    and self._frame_counter[cam_id] % reid_interval == 0
+                do_reid = self._extractor.is_available and (
+                    frame_idx == 1 or frame_idx % reid_interval == 0
                 )
 
-                if do_reid:
-                    await asyncio.to_thread(self._apply_reid, frame, tracked)
+                tracked = await asyncio.to_thread(
+                    self._process_frame_sync,
+                    cam_id, frame, frame_idx, do_reid,
+                )
 
-                    # After ReID has potentially assigned global IDs, log summary.
-                    logger.info(
-                        "reid_summary",
-                        camera_id=cam_id,
-                        frame_index=frame_index,
-                        num_tracked=len(tracked),
-                        with_identity=len(
-                            [obj for obj in tracked if obj.global_id]
-                        ),
-                        identities=[
-                            {
-                                "track_id": obj.id,
-                                "global_id": obj.global_id,
-                            }
-                            for obj in tracked
-                            if obj.global_id
-                        ],
-                    )
+                self._last_annotated[cam_id] = (frame.copy(), list(tracked))
 
-                # Emit results (NATS + view state) only every result_interval_seconds.
+                if frame_idx == 1 or frame_idx % 10 == 0:
+                    self._log_pipeline_summary(cam_id, frame_idx, tracked)
+
                 interval = self._settings.pipeline.result_interval_seconds
                 now = time.monotonic()
-                if interval <= 0 or (now - self._last_result_emit_time) >= interval:
+                last = self._last_emit_time.get(cam_id, 0.0)
+                if interval <= 0 or (now - last) >= interval:
                     await self._publish_events(tracked, cam_id)
-                    self._last_result_emit_time = now
-                    # Update last annotated for visualization (step 3).
-                    self._last_annotated[cam_id] = (frame.copy(), list(tracked))
+                    self._last_emit_time[cam_id] = now
 
             if not processed_any:
                 await asyncio.sleep(0.01)
@@ -173,18 +137,81 @@ class PipelineEngine:
         self._running = False
         logger.info("pipeline_stopped")
 
-    def _apply_reid(
+    def _process_frame_sync(
         self,
+        cam_id: str,
         frame: NDArray[np.uint8],
+        frame_idx: int,
+        do_reid: bool,
+    ) -> list[TrackedObject]:
+        """Run detection + tracking + ReID synchronously in a worker thread.
+
+        All CPU-bound inference (YOLO via PyTorch and ReID via ONNX Runtime)
+        runs inside a single thread to avoid cross-library thread-pool deadlocks.
+        """
+        t0 = time.monotonic()
+        detections = self._detector.detect(frame)
+        t1 = time.monotonic()
+        tracked = self._trackers[cam_id].update(detections)
+        t2 = time.monotonic()
+
+        if do_reid and tracked:
+            for obj in tracked:
+                embedding = self._extractor.extract(frame, obj.bbox)
+                if embedding is not None:
+                    obj.embedding = embedding
+            t3 = time.monotonic()
+            self._matcher.match(tracked, camera_id=cam_id)
+            t4 = time.monotonic()
+            logger.debug(
+                "frame_timings",
+                camera_id=cam_id,
+                frame_idx=frame_idx,
+                yolo_ms=round((t1 - t0) * 1000),
+                track_ms=round((t2 - t1) * 1000),
+                embed_ms=round((t3 - t2) * 1000),
+                match_ms=round((t4 - t3) * 1000),
+            )
+        else:
+            logger.debug(
+                "frame_timings",
+                camera_id=cam_id,
+                frame_idx=frame_idx,
+                yolo_ms=round((t1 - t0) * 1000),
+                track_ms=round((t2 - t1) * 1000),
+            )
+
+        return tracked
+
+    def _log_pipeline_summary(
+        self,
+        cam_id: str,
+        frame_idx: int,
         tracked: list[TrackedObject],
     ) -> None:
-        """Extract embeddings and run cross-camera matching."""
-        for obj in tracked:
-            embedding = self._extractor.extract(frame, obj.bbox)
-            if embedding is not None:
-                obj.embedding = embedding
-
-        self._matcher.match(tracked)
+        with_gid = [o for o in tracked if o.global_id]
+        logger.info(
+            "pipeline_summary",
+            camera_id=cam_id,
+            frame_idx=frame_idx,
+            detections=len(tracked),
+            with_global_id=len(with_gid),
+            objects=[
+                {
+                    "track_id": o.id,
+                    "label": o.label,
+                    "conf": round(o.confidence, 2),
+                    "global_id": o.global_id or "-",
+                    "cameras_seen": (
+                        self._registry.get_cameras_for_identity(o.global_id)
+                        if o.global_id
+                        else []
+                    ),
+                }
+                for o in tracked
+            ],
+            total_identities=self._registry.size,
+        )
 
     async def _publish_events(
         self,
