@@ -31,29 +31,28 @@ FrameType = NDArray[np.uint8]
 
 QUEUE_MAX_SIZE = 4
 
-_MJPEG_FOURCC = cv2.VideoWriter.fourcc(*"MJPG")
-
-_MAX_CONSECUTIVE_FAILURES = 300
+_MAX_CONSECUTIVE_FAILURES = 50
 
 
 def _open_v4l2(info: CameraInfo) -> cv2.VideoCapture:
-    """Open a V4L2 device by index, configure resolution/fps."""
-    idx_match = re.search(r"\d+$", info.device_path)
-    if idx_match is None:
-        raise ValueError(f"Cannot parse device index from {info.device_path}")
-    idx = int(idx_match.group())
 
-    cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+    cap = cv2.VideoCapture(info.device_path, cv2.CAP_V4L2)
+
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open V4L2 camera {info.device_path}")
 
-    cap.set(cv2.CAP_PROP_FOURCC, _MJPEG_FOURCC)
     w, h = info.resolution
+
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
     cap.set(cv2.CAP_PROP_FPS, info.fps)
-    return cap
 
+    # prueba de frame
+    ok, frame = cap.read()
+    if not ok:
+        raise RuntimeError("Camera opened but no frame received")
+
+    return cap
 
 def _open_stream(info: CameraInfo) -> cv2.VideoCapture:
     """Open a network stream (RTSP, HTTP MJPEG, etc.)."""
