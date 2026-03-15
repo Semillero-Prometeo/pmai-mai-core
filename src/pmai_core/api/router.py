@@ -9,10 +9,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from pmai_core import __version__
-from pmai_core.camera.manager import CameraManager
+from pmai_core.resources.camera.manager import CameraManager
 from pmai_core.pipeline.engine import PipelineEngine
 from pmai_core.pipeline.global_objects import compute_global_objects_for_context
-from pmai_core.vision.overlay import draw_detections
+from pmai_core.resources.vision.overlay import draw_detections
 
 
 def create_api(
@@ -82,10 +82,12 @@ def create_api(
         annotated = pipeline_engine.all_last_annotated
         registry = pipeline_engine.registry
         global_objects = compute_global_objects_for_context(annotated, registry)
-        return JSONResponse({
-            "count": len(global_objects),
-            "objects": [o.model_dump() for o in global_objects],
-        })
+        return JSONResponse(
+            {
+                "count": len(global_objects),
+                "objects": [o.model_dump() for o in global_objects],
+            }
+        )
 
     @app.get("/reid/status")
     async def reid_status() -> JSONResponse:
@@ -96,17 +98,21 @@ def create_api(
         identities: list[dict[str, Any]] = []
         for gid in registry.identity_ids:
             cams = registry.get_cameras_for_identity(gid)
-            identities.append({
-                "global_id": gid,
-                "cameras_seen": sorted(cams),
-                "cross_camera": len(cams) > 1,
-            })
+            identities.append(
+                {
+                    "global_id": gid,
+                    "cameras_seen": sorted(cams),
+                    "cross_camera": len(cams) > 1,
+                }
+            )
         cross_count = sum(1 for i in identities if i["cross_camera"])
-        return JSONResponse({
-            "total_identities": len(identities),
-            "cross_camera_identities": cross_count,
-            "identities": identities,
-        })
+        return JSONResponse(
+            {
+                "total_identities": len(identities),
+                "cross_camera_identities": cross_count,
+                "identities": identities,
+            }
+        )
 
     @app.get("/cameras/{camera_id}/view", response_class=Response)
     async def camera_view(camera_id: str) -> Response:
@@ -122,7 +128,9 @@ def create_api(
         frame, tracked = data
         cameras_seen_map = _build_cameras_seen_map(pipeline_engine, tracked)
         annotated = draw_detections(
-            frame, tracked, cameras_seen_map=cameras_seen_map,
+            frame,
+            tracked,
+            cameras_seen_map=cameras_seen_map,
         )
         _, jpeg = cv2.imencode(".jpg", annotated)
         return Response(

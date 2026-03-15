@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from pmai_core.camera.capture import CameraCapture
-from pmai_core.camera.discovery import discover_usb_cameras
+from pmai_core.resources.camera.capture import CameraCapture
+from pmai_core.resources.camera.discovery import discover_usb_cameras
 from pmai_core.domain.camera import CameraInfo, CameraSourceType, CameraStatus
 from pmai_core.settings import Settings
 
@@ -193,8 +193,7 @@ class CameraManager:
 
         allowed_exts = set(cam_settings.video_extensions)
         video_files = sorted(
-            p for p in folder.iterdir()
-            if p.is_file() and p.suffix.lower() in allowed_exts
+            p for p in folder.iterdir() if p.is_file() and p.suffix.lower() in allowed_exts
         )
         if not video_files:
             logger.warning(

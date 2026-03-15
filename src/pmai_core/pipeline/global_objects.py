@@ -6,7 +6,7 @@ from typing import Any
 
 from pmai_core.domain.context_object import GlobalObjectForContext
 from pmai_core.domain.tracked_object import TrackedObject
-from pmai_core.reid.registry import GlobalRegistry
+from pmai_core.resources.reid.registry import GlobalRegistry
 
 # Type for annotated state: camera_id -> (frame, tracked_objects)
 AnnotatedState = dict[str, tuple[Any, list[TrackedObject]]]

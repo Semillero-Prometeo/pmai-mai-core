@@ -9,7 +9,7 @@ import structlog
 import uvicorn
 
 from pmai_core.api.router import create_api
-from pmai_core.camera.manager import CameraManager
+from pmai_core.resources.camera.manager import CameraManager
 from pmai_core.messaging.client import NATSClient
 from pmai_core.pipeline.engine import PipelineEngine
 from pmai_core.settings import Settings

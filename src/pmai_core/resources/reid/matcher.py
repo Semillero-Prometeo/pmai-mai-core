@@ -7,7 +7,7 @@ import structlog
 from numpy.typing import NDArray
 
 from pmai_core.domain.tracked_object import TrackedObject
-from pmai_core.reid.registry import GlobalRegistry
+from pmai_core.resources.reid.registry import GlobalRegistry
 
 logger = structlog.get_logger(__name__)
 
