@@ -51,7 +51,6 @@ class PipelineEngine:
                 self._identification.get_global_objects_for_context()
             )
             if not global_objects:
-                logger.info("no_context_objects_skipping_rest_of_flow")
                 continue
 
             # Rest of flow (e.g. downstream phases consuming global_objects)
