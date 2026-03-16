@@ -5,77 +5,58 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-import numpy as np
 import structlog
-from numpy.typing import NDArray
 
 from pmai_core.domain.context_object import GlobalObjectForContext
-from pmai_core.domain.tracked_object import TrackedObject
 from pmai_core.resources.identification import IdentificationService
-from pmai_core.resources.reid.registry import GlobalRegistry
-from pmai_core.resources.vision.tracker import ObjectTracker
-from pmai_core.settings import Settings
 
 if TYPE_CHECKING:
     from pmai_core.resources.camera.manager import CameraManager
-    from pmai_core.messaging.client import NATSClient
 
 logger = structlog.get_logger(__name__)
 
 
 class PipelineEngine:
-    """Runs the main loop: cameras -> identification phase -> global objects -> future phases."""
+    """Runs the loop every [result_interval_seconds]: cameras -> identification -> global objects"""
 
     def __init__(
         self,
-        settings: Settings,
         camera_manager: CameraManager,
-        nats_client: NATSClient | None = None,
+        identification_service: IdentificationService,
     ) -> None:
-        self._settings = settings
         self._camera_manager = camera_manager
-        self._identification = IdentificationService(settings, nats_client)
+        self._identification = identification_service
         self._running = False
 
-    @property
-    def registry(self) -> GlobalRegistry:
-        return self._identification.registry
-
-    @property
-    def trackers(self) -> dict[str, ObjectTracker]:
-        return self._identification.trackers
-
-    @property
-    def all_last_annotated(
-        self,
-    ) -> dict[str, tuple[NDArray[np.uint8], list[TrackedObject]]]:
-        return self._identification.all_last_annotated
-
-    def get_last_annotated(
-        self, camera_id: str
-    ) -> tuple[NDArray[np.uint8], list[TrackedObject]] | None:
-        return self._identification.get_last_annotated(camera_id)
-
     async def run(self) -> None:
-        """Main loop: only the essential flow."""
+        """Main loop: every [result_interval_seconds] run identification"""
         self._running = True
-        logger.info("pipeline_started")
+
+        logger.info(
+            "pipeline_started",
+            interval_seconds=self._identification._settings.pipeline.result_interval_seconds,
+        )
 
         while self._running:
+            await asyncio.sleep(self._identification._settings.pipeline.result_interval_seconds)
+
             captures = self._camera_manager.captures
             if not captures:
-                await asyncio.sleep(0.5)
+                logger.debug("no_captures_skipping")
                 continue
 
-            processed_any = await self._identification.run_phase(captures)
+            await self._identification.run_phase(captures)
 
             global_objects: list[GlobalObjectForContext] = (
                 self._identification.get_global_objects_for_context()
             )
-            print(global_objects)
+            if not global_objects:
+                logger.info("no_context_objects_skipping_rest_of_flow")
+                continue
 
-            if not processed_any:
-                await asyncio.sleep(0.05)
+            # Rest of flow (e.g. downstream phases consuming global_objects)
+            logger.debug("context_objects_ready", count=len(global_objects))
+            print(global_objects)
 
     def stop(self) -> None:
         self._running = False

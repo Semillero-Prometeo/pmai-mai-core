@@ -11,24 +11,11 @@ import uvicorn
 from pmai_core.api.router import create_api
 from pmai_core.resources.camera.manager import CameraManager
 from pmai_core.messaging.client import NATSClient
-from pmai_core.pipeline.engine import PipelineEngine
+from pmai_core.resources.identification.service import IdentificationService
 from pmai_core.settings import Settings
+from pmai_core.pipeline.engine import PipelineEngine
 
 logger = structlog.get_logger(__name__)
-
-
-# def _configure_logging(level: str) -> None:
-#     structlog.configure(
-#         processors=[
-#             structlog.contextvars.merge_contextvars,
-#             structlog.processors.add_log_level,
-#             structlog.processors.TimeStamper(fmt="iso"),
-#             structlog.dev.ConsoleRenderer(),
-#         ],
-#         wrapper_class=structlog.make_filtering_bound_logger(
-#             structlog.get_level_from_name(level)
-#         ),
-#     )
 
 
 async def run_app(settings: Settings | None = None) -> None:
@@ -49,15 +36,17 @@ async def run_app(settings: Settings | None = None) -> None:
     nats_client = NATSClient(settings.nats)
     await nats_client.connect()
 
-    # --- Pipeline ---
+    # --- Identification Service (single instance for API and pipeline) ---
+    identification_service = IdentificationService(settings, nats_client)
+
+    # --- Pipeline Engine (uses same identification service) ---
     engine = PipelineEngine(
-        settings=settings,
         camera_manager=camera_manager,
-        nats_client=nats_client if nats_client.is_connected else None,
+        identification_service=identification_service,
     )
 
-    # --- FastAPI ---
-    api = create_api(camera_manager=camera_manager, pipeline_engine=engine)
+    # --- FastAPI (uses same identification service) ---
+    api = create_api(camera_manager=camera_manager, identification_service=identification_service)
     api_config = uvicorn.Config(
         api,
         host=settings.api.host,
@@ -84,9 +73,7 @@ async def run_app(settings: Settings | None = None) -> None:
     ]
 
     if settings.camera.auto_discover and settings.camera.source_mode == "v4l2":
-        tasks.append(
-            asyncio.create_task(camera_manager.run_polling_loop(), name="cam_poll")
-        )
+        tasks.append(asyncio.create_task(camera_manager.run_polling_loop(), name="cam_poll"))
 
     # Wait for shutdown signal
     await shutdown_event.wait()

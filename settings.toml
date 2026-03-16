@@ -20,39 +20,6 @@ video_extensions = [".mp4", ".avi", ".mov", ".mkv", ".webm"]
 video_loop = true
 video_fps = 15
 
-# --- Manual camera sources ---
-# Optional advanced sources (stream/file/v4l2). In "video_folder" mode these are
-# ignored because videos are loaded automatically from `video_folder_path`.
-
-# Option A: IP Webcam Android app (free) → Settings → Start server.
-# Replace <PHONE_IP> with your phone's actual IP on the same network.
-# [[camera.sources]]
-# id = "phone_cam"
-# type = "stream"
-# url = "http://<PHONE_IP>:8080/video"
-
-# Option B: OBS Virtual Camera → OBS RTSP plugin.
-# [[camera.sources]]
-# id = "obs_cam"
-# type = "stream"
-# url = "rtsp://host.docker.internal:8554/live"
-
-# Option C: Local video file for offline testing.
-# [[camera.sources]]
-# id = "test_cam_1"
-# type = "file"
-# path = "/data/test_video.mp4"
-# fps = 15
-# loop = true
-
-# Option D: Second file to test cross-camera ReID.
-# [[camera.sources]]
-# id = "test_cam_2"
-# type = "file"
-# path = "/data/test_video_2.mp4"
-# fps = 15
-# loop = true
-
 [vision]
 model_path = "/app/src/pmai_core/models/my_model.pt"
 confidence_threshold = 0.5

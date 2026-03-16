@@ -10,14 +10,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from pmai_core import __version__
 from pmai_core.resources.camera.manager import CameraManager
-from pmai_core.pipeline.engine import PipelineEngine
 from pmai_core.pipeline.global_objects import compute_global_objects_for_context
+from pmai_core.resources.identification.service import IdentificationService
 from pmai_core.resources.vision.overlay import draw_detections
 
 
 def create_api(
     camera_manager: CameraManager | None = None,
-    pipeline_engine: PipelineEngine | None = None,
+    identification_service: IdentificationService | None = None,
 ) -> FastAPI:
     """Build the FastAPI app, wiring in live references to the subsystems."""
 
@@ -54,9 +54,9 @@ def create_api(
 
     @app.get("/objects")
     async def objects() -> dict[str, Any]:
-        if pipeline_engine is None:
+        if identification_service is None:
             return {"identities": 0, "ids": []}
-        registry = pipeline_engine.registry
+        registry = identification_service.registry
         return {
             "identities": registry.size,
             "ids": registry.identity_ids,
@@ -64,10 +64,10 @@ def create_api(
 
     @app.get("/trackers")
     async def trackers() -> dict[str, Any]:
-        if pipeline_engine is None:
+        if identification_service is None:
             return {"trackers": {}}
         return {
-            "active_cameras": list(pipeline_engine.trackers.keys()),
+            "active_cameras": list(identification_service.trackers.keys()),
         }
 
     @app.get("/objects/tracked")
@@ -77,10 +77,10 @@ def create_api(
         Schema: id_global, etiqueta, confianza, contexto, sensores, cameras_seen, etc.
         This is the structured output that the LLM contextualizer will consume.
         """
-        if pipeline_engine is None:
+        if identification_service is None:
             return JSONResponse({"count": 0, "objects": []})
-        annotated = pipeline_engine.all_last_annotated
-        registry = pipeline_engine.registry
+        annotated = identification_service.all_last_annotated
+        registry = identification_service.registry
         global_objects = compute_global_objects_for_context(annotated, registry)
         return JSONResponse(
             {
@@ -92,9 +92,9 @@ def create_api(
     @app.get("/reid/status")
     async def reid_status() -> JSONResponse:
         """Summary of cross-camera ReID state: identities and which cameras see them."""
-        if pipeline_engine is None:
+        if identification_service is None:
             return JSONResponse({"error": "pipeline not available"}, status_code=503)
-        registry = pipeline_engine.registry
+        registry = identification_service.registry
         identities: list[dict[str, Any]] = []
         for gid in registry.identity_ids:
             cams = registry.get_cameras_for_identity(gid)
@@ -117,16 +117,16 @@ def create_api(
     @app.get("/cameras/{camera_id}/view", response_class=Response)
     async def camera_view(camera_id: str) -> Response:
         """Return the latest annotated frame (YOLO + ReID) as JPEG."""
-        if pipeline_engine is None:
+        if identification_service is None:
             raise HTTPException(status_code=503, detail="Pipeline not available")
-        data = pipeline_engine.get_last_annotated(camera_id)
+        data = identification_service.get_last_annotated(camera_id)
         if data is None:
             raise HTTPException(
                 status_code=404,
                 detail=f"No annotated frame for camera {camera_id}",
             )
         frame, tracked = data
-        cameras_seen_map = _build_cameras_seen_map(pipeline_engine, tracked)
+        cameras_seen_map = _build_cameras_seen_map(identification_service, tracked)
         annotated = draw_detections(
             frame,
             tracked,
@@ -154,7 +154,7 @@ def create_api(
 
 
 def _build_cameras_seen_map(
-    engine: PipelineEngine,
+    identification_service: IdentificationService,
     tracked: list[Any],
 ) -> dict[str, list[str]]:
     """Build {global_id: [cameras...]} for objects in the given tracked list."""
@@ -162,7 +162,7 @@ def _build_cameras_seen_map(
     for obj in tracked:
         gid = obj.global_id
         if gid and gid not in result:
-            result[gid] = engine.registry.get_cameras_for_identity(gid)
+            result[gid] = identification_service.registry.get_cameras_for_identity(gid)
     return result
 
 
