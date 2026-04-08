@@ -31,3 +31,7 @@ class GlobalObjectForContext(BaseModel):
         default=None,
         description="Representative bbox (xmin, ymin, xmax, ymax) from best view",
     )
+    image_base64: str | None = Field(
+        default=None,
+        description="Base64-encoded image from best view",
+    )
