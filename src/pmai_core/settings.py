@@ -69,8 +69,11 @@ class ReIDSettings(BaseModel):
 
 
 class NATSSettings(BaseModel):
+    """Event subjects use ``subject_prefix``; RPC uses ``ms_name`` (e.g. ``PMAI_CORE.healthService.health``)."""
+
     url: str = "nats://localhost:4222"
     subject_prefix: str = "pmai"
+    ms_name: str = "MAI_CORE_MS"
 
     @model_validator(mode="before")
     @classmethod
@@ -85,11 +88,6 @@ class NATSSettings(BaseModel):
             values = dict(values) if isinstance(values, dict) else {}
             values["url"] = env_url
         return values
-
-
-class APISettings(BaseModel):
-    host: str = "0.0.0.0"
-    port: int = 8000
 
 
 class PipelineSettings(BaseModel):
@@ -108,7 +106,6 @@ class Settings(BaseModel):
     vision: VisionSettings = VisionSettings()
     reid: ReIDSettings = ReIDSettings()
     nats: NATSSettings = NATSSettings()
-    api: APISettings = APISettings()
     pipeline: PipelineSettings = PipelineSettings()
 
     @classmethod
