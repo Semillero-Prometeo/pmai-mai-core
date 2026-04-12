@@ -22,8 +22,6 @@ dependencies = [
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "nats-py>=2.9",
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
     "structlog>=24.4",
 ]
 
