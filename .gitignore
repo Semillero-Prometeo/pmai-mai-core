@@ -11,7 +11,7 @@ build/
 
 # AI model weights (large binary files)
 *.onnx
-*.pt
+# *.pt
 
 # IDE
 .idea/
