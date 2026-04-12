@@ -31,3 +31,17 @@ sudo apt update && sudo apt upgrade -y && sudo apt install -y build-essential fl
 # Probar la camara WSL/Linux
 sudo apt install v4l-utils guvcview
 sudo guvcview
+
+
+# Elimina el venv existente
+rm -rf .venv
+
+# Crea uno nuevo
+python3 -m venv .venv
+
+# Actívalo
+source .venv/bin/activate
+
+# Instala las dependencias
+python -m pip install --upgrade pip
+python -m pip install -e ".[dev]"
