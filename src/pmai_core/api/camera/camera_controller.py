@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import base64
 from typing import Any
 
-import cv2
 from pydantic import BaseModel, ValidationError
 
 from pmai_core import __version__
+from pmai_core.api.tracking_maps import build_cameras_seen_map
+from pmai_core.api.image_encoding import frame_to_jpeg_base64
 from pmai_core.resources.camera.manager import CameraManager
 from pmai_core.resources.identification.service import IdentificationService
 from pmai_core.resources.vision.overlay import draw_detections
@@ -20,18 +20,6 @@ class CameraViewPayload(BaseModel):
 
 class AnnotatedFrameNotFoundError(Exception):
     status_code = 404
-
-
-def _build_cameras_seen_map(
-    identification_service: IdentificationService,
-    tracked: list[Any],
-) -> dict[str, list[str]]:
-    result: dict[str, list[str]] = {}
-    for obj in tracked:
-        gid = obj.global_id
-        if gid and gid not in result:
-            result[gid] = identification_service.registry.get_cameras_for_identity(gid)
-    return result
 
 
 class CameraController:
@@ -75,15 +63,15 @@ class CameraController:
                 f"No annotated frame for camera {camera_id}",
             )
         frame, tracked = frame_data
-        cameras_seen_map = _build_cameras_seen_map(svc, tracked)
+        cameras_seen_map = build_cameras_seen_map(svc, tracked)
         annotated = draw_detections(
             frame,
             tracked,
             cameras_seen_map=cameras_seen_map,
         )
-        _, jpeg = cv2.imencode(".jpg", annotated)
+        b64 = frame_to_jpeg_base64(annotated, max_width=None, jpeg_quality=90)
         return {
             "camera_id": camera_id,
             "media_type": "image/jpeg",
-            "data_base64": base64.b64encode(jpeg.tobytes()).decode("ascii"),
+            "data_base64": b64,
         }

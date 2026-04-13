@@ -7,6 +7,7 @@ from nats.aio.client import Client as NATSClient
 from pmai_core.api.camera.camera_controller import CameraController
 from pmai_core.api.health.health_controller import HealthController
 from pmai_core.api.monitoring.monitoring_controller import MonitoringController
+from pmai_core.api.vision.vision_controller import VisionController
 from pmai_core.core.nats.interfaces.nats_interface import NatsSubscriber
 from pmai_core.resources.camera.manager import CameraManager
 from pmai_core.resources.identification.service import IdentificationService
@@ -25,6 +26,7 @@ def create_subscribers(
     health_controller = HealthController(settings)
     camera_controller = CameraController(camera_manager, identification_service)
     monitoring_controller = MonitoringController(identification_service)
+    vision_controller = VisionController(camera_manager, identification_service)
 
     return [
         NatsSubscriber(
@@ -54,5 +56,9 @@ def create_subscribers(
         NatsSubscriber(
             controller=monitoring_controller.get_reid_status,
             subject=f"{ms}.monitoringService.getReidStatus",
+        ),
+        NatsSubscriber(
+            controller=vision_controller.get_snapshot,
+            subject=f"{ms}.visionService.getSnapshot",
         ),
     ]
