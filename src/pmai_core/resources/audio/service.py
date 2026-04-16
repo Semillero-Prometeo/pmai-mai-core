@@ -19,7 +19,7 @@ logger = structlog.get_logger(__name__)
 
 try:
     import sounddevice as sd
-except ModuleNotFoundError:  # pragma: no cover - guarded at runtime
+except (ModuleNotFoundError, OSError):  # pragma: no cover - guarded at runtime
     sd = None
 
 try:
@@ -52,6 +52,7 @@ class AudioService:
         self._worker: threading.Thread | None = None
 
         self._vosk_model: Model | None = None
+        self._active_sample_rate = self._audio_settings.sample_rate
 
     def start(self) -> None:
         if not self._audio_settings.enabled:
@@ -126,6 +127,15 @@ class AudioService:
                 self._listen_once()
             except Exception as exc:  # pragma: no cover - runtime resilience
                 self._set_error(str(exc))
+                is_portaudio_error = (
+                    sd is not None
+                    and hasattr(sd, "PortAudioError")
+                    and isinstance(exc, sd.PortAudioError)
+                )
+                if is_portaudio_error:
+                    logger.warning("audio_listener_cycle_failed", error=str(exc))
+                    self._stop_event.wait(2.0)
+                    continue
                 logger.exception("audio_listener_cycle_failed", error=str(exc))
                 self._stop_event.wait(1.0)
 
@@ -144,16 +154,18 @@ class AudioService:
         if selected_mic is None:
             raise RuntimeError(f"Selected microphone unavailable: {selected}")
 
-        chunk_frames = int(self._audio_settings.sample_rate * self._audio_settings.chunk_ms / 1000)
+        stream_sample_rate = self._resolve_input_sample_rate(selected_mic)
+        self._active_sample_rate = stream_sample_rate
+        chunk_frames = int(stream_sample_rate * self._audio_settings.chunk_ms / 1000)
         if chunk_frames <= 0:
             raise RuntimeError("Invalid audio chunk size")
         vad = webrtcvad.Vad(2)
         wake_recognizer = KaldiRecognizer(
             model,
-            self._audio_settings.sample_rate,
+            stream_sample_rate,
             json.dumps(self._audio_settings.wake_phrases, ensure_ascii=True),
         )
-        command_recognizer = KaldiRecognizer(model, self._audio_settings.sample_rate)
+        command_recognizer = KaldiRecognizer(model, stream_sample_rate)
 
         pre_roll_chunks = max(
             1,
@@ -165,7 +177,7 @@ class AudioService:
         active_capture = False
 
         with sd.RawInputStream(
-            samplerate=self._audio_settings.sample_rate,
+            samplerate=stream_sample_rate,
             channels=self._audio_settings.channels,
             dtype="int16",
             blocksize=chunk_frames,
@@ -175,7 +187,7 @@ class AudioService:
                 "audio_stream_opened",
                 microphone_id=selected_mic.microphone_id,
                 microphone_name=selected_mic.name,
-                sample_rate=self._audio_settings.sample_rate,
+                sample_rate=stream_sample_rate,
                 chunk_ms=self._audio_settings.chunk_ms,
             )
             while self._running and self._listening_enabled and not self._stop_event.is_set():
@@ -192,9 +204,7 @@ class AudioService:
                     ):
                         active_capture = True
                         self._mark_wake_word()
-                        command_recognizer = KaldiRecognizer(
-                            model, self._audio_settings.sample_rate
-                        )
+                        command_recognizer = KaldiRecognizer(model, stream_sample_rate)
                         for historical in pre_roll:
                             command_recognizer.AcceptWaveform(historical)
                         silence_ms = 0
@@ -226,7 +236,7 @@ class AudioService:
                     pre_roll.clear()
                     wake_recognizer = KaldiRecognizer(
                         model,
-                        self._audio_settings.sample_rate,
+                        stream_sample_rate,
                         json.dumps(self._audio_settings.wake_phrases, ensure_ascii=True),
                     )
 
@@ -261,7 +271,47 @@ class AudioService:
         chunk_ms = self._audio_settings.chunk_ms
         if chunk_ms not in (10, 20, 30):
             return False
-        return bool(vad.is_speech(chunk, self._audio_settings.sample_rate))
+        return bool(vad.is_speech(chunk, self._active_sample_rate))
+
+    def _resolve_input_sample_rate(self, selected_mic: MicrophoneInfo) -> int:
+        if sd is None:
+            raise RuntimeError("sounddevice is not installed")
+        desired = self._audio_settings.sample_rate
+        candidates = [
+            desired,
+            selected_mic.sample_rate,
+            16000,
+            48000,
+            44100,
+            32000,
+            8000,
+        ]
+        seen: set[int] = set()
+        ordered = [sr for sr in candidates if sr > 0 and not (sr in seen or seen.add(sr))]
+        last_error: str | None = None
+        for sample_rate in ordered:
+            try:
+                sd.check_input_settings(
+                    device=selected_mic.device_index,
+                    samplerate=sample_rate,
+                    channels=self._audio_settings.channels,
+                    dtype="int16",
+                )
+                if sample_rate != desired:
+                    logger.warning(
+                        "audio_sample_rate_fallback",
+                        requested_sample_rate=desired,
+                        selected_sample_rate=sample_rate,
+                        microphone_id=selected_mic.microphone_id,
+                    )
+                return sample_rate
+            except Exception as exc:  # pragma: no cover - runtime dependent
+                last_error = str(exc)
+
+        raise RuntimeError(
+            "No compatible sample rate for selected microphone "
+            f"{selected_mic.microphone_id}. Last error: {last_error}"
+        )
 
     def _mark_wake_word(self) -> None:
         with self._state_lock:

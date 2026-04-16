@@ -12,7 +12,7 @@ logger = structlog.get_logger(__name__)
 
 try:
     import sounddevice as sd
-except ModuleNotFoundError:  # pragma: no cover - guarded at runtime
+except (ModuleNotFoundError, OSError):  # pragma: no cover - guarded at runtime
     sd = None
 
 

@@ -11,6 +11,9 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     v4l-utils \
+    libportaudio2 \
+    portaudio19-dev \
+    libasound2 \
     libglib2.0-0 \
     libgl1 \
     && rm -rf /var/lib/apt/lists/*
