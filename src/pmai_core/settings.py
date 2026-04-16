@@ -98,6 +98,36 @@ class PipelineSettings(BaseModel):
     result_interval_seconds: float = 5.0
 
 
+class AudioSettings(BaseModel):
+    """Configuration for background microphone listening and transcription."""
+
+    enabled: bool = True
+    auto_start_listening: bool = True
+    auto_select_microphone: bool = True
+    preferred_microphone_id: str | None = None
+
+    sample_rate: int = 16000
+    channels: int = 1
+    chunk_ms: int = 30
+    long_silence_ms: int = 1600
+    max_recording_seconds: float = 12.0
+    min_recording_seconds: float = 0.8
+    preroll_seconds: float = 0.4
+
+    wake_phrases: list[str] = ["hey fede", "hola fede"]
+    wake_partial_match: bool = True
+
+    vosk_model_path: str = "models/vosk-model-small-es-0.42"
+    poll_interval_seconds: float = 5.0
+
+    @model_validator(mode="after")
+    def _normalize_audio_settings(self) -> "AudioSettings":
+        preferred = (self.preferred_microphone_id or "").strip()
+        self.preferred_microphone_id = preferred or None
+        self.wake_phrases = [p.strip().lower() for p in self.wake_phrases if p.strip()]
+        return self
+
+
 class Settings(BaseModel):
     """Root settings container – merges TOML file values with defaults."""
 
@@ -107,6 +137,7 @@ class Settings(BaseModel):
     reid: ReIDSettings = ReIDSettings()
     nats: NATSSettings = NATSSettings()
     pipeline: PipelineSettings = PipelineSettings()
+    audio: AudioSettings = AudioSettings()
 
     @classmethod
     def from_toml(cls, path: Path = _DEFAULT_SETTINGS_PATH) -> Self:
