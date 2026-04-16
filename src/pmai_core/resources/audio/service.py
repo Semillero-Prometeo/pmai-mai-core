@@ -368,12 +368,10 @@ class AudioService:
         return f"{wake} {cleaned}".strip()
 
     def _dispatch_transcript(self, transcript: str) -> None:
-        if self._loop is None or self._rpc_nc is None:
-            logger.warning("audio_rpc_not_bound", transcript=transcript)
-            return
         if len(transcript.strip()) >= self._audio_settings.min_useful_transcript_chars:
             self.management_ms_service.chat(transcript)
             return
+
         logger.info(
             "audio_transcript_too_short_for_chat",
             transcript=transcript,
