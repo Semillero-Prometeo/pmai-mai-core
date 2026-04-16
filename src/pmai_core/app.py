@@ -11,6 +11,7 @@ from pmai_core.core.nats.nats_client import nats_handler
 from pmai_core.core.nats.nats_subscribers import create_subscribers
 from pmai_core.messaging.client import NATSClient
 from pmai_core.pipeline.engine import PipelineEngine
+from pmai_core.resources.audio.service import AudioService
 from pmai_core.resources.camera.manager import CameraManager
 from pmai_core.resources.identification.service import IdentificationService
 from pmai_core.settings import Settings
@@ -34,6 +35,8 @@ async def run_app(settings: Settings | None = None) -> None:
     await nats_client.connect()
 
     identification_service = IdentificationService(settings, nats_client)
+    audio_service = AudioService(settings)
+    audio_service.start()
 
     engine = PipelineEngine(
         camera_manager=camera_manager,
@@ -47,6 +50,7 @@ async def run_app(settings: Settings | None = None) -> None:
         settings=settings,
         camera_manager=camera_manager,
         identification_service=identification_service,
+        audio_service=audio_service,
     )
     for subscriber in subscribers:
         await nats_handler.subscribe(subscriber)
@@ -63,6 +67,7 @@ async def run_app(settings: Settings | None = None) -> None:
 
     tasks = [
         asyncio.create_task(engine.run(), name="pipeline"),
+        asyncio.create_task(audio_service.run_polling_loop(), name="audio_poll"),
     ]
 
     if settings.camera.auto_discover and settings.camera.source_mode == "v4l2":
@@ -72,6 +77,7 @@ async def run_app(settings: Settings | None = None) -> None:
 
     logger.info("shutting_down")
     engine.stop()
+    audio_service.stop()
     camera_manager.stop()
     await nats_handler.disconnect()
     await nats_client.close()
