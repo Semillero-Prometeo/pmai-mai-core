@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 from typing import Any
 
@@ -25,9 +26,14 @@ def _rpc_error_payload(exc: BaseException) -> str | dict[str, Any]:
 
 
 class NatsHandler:
+    _rpc_nc: Any | None = None
+    _loop: asyncio.AbstractEventLoop | None = None
+
     def __init__(self) -> None:
         self.nc: NATSClient = NATSClient()
         self.connected: bool = False
+        self._rpc_nc = None
+        self._loop = None
 
     async def connect(self, url: str, *, max_attempts: int = 10) -> None:
         try:
@@ -42,6 +48,8 @@ class NatsHandler:
                     )
                     if self.nc.is_connected:
                         self.connected = True
+                        self._rpc_nc = self.nc
+                        self._loop = asyncio.get_running_loop()
                         logger.info("nats_rpc_connected", url=url)
                         return
                 except Exception as e:
@@ -102,6 +110,32 @@ class NatsHandler:
 
         logger.info("nats_rpc_subscribing", subject=subscriber.subject)
         await self.nc.subscribe(subscriber.subject, cb=message_handler)
+
+    def sync_request(
+        self,
+        subject: str,
+        payload: dict[str, Any],
+        timeout: float,
+    ) -> dict[str, Any]:
+        if self._loop is None or self._rpc_nc is None:
+            raise RuntimeError("NATS RPC not available for audio dispatch")
+        request_payload = {"id": "audio-voice-dispatch", "data": payload}
+        future = asyncio.run_coroutine_threadsafe(
+            self._rpc_nc.request(subject, json.dumps(request_payload).encode(), timeout=timeout),
+            self._loop,
+        )
+        try:
+            msg = future.result(timeout=timeout + 2.0)
+        except concurrent.futures.TimeoutError as exc:
+            raise RuntimeError(f"NATS request timeout for {subject}") from exc
+
+        raw_data = json.loads(msg.data.decode())
+        if "err" in raw_data and raw_data["err"]:
+            raise RuntimeError(f"NATS error for {subject}: {raw_data['err']}")
+        response_data = raw_data.get("response")
+        if isinstance(response_data, dict):
+            return response_data
+        return {"response": response_data}
 
 
 nats_handler: NatsHandler = NatsHandler()

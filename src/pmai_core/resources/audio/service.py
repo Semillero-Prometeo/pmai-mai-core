@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import threading
 from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import structlog
 
+from pmai_core.api.management_ms import management_ms_service
+from pmai_core.api.robotics_ms import robotics_ms_service
 from pmai_core.resources.audio.discovery import discover_usb_microphones
 from pmai_core.resources.audio.models import AudioRuntimeStatus, MicrophoneInfo
 from pmai_core.settings import Settings
@@ -38,7 +42,8 @@ class AudioService:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._audio_settings = settings.audio
-
+        self.management_ms_service = management_ms_service.ManagementMsService()
+        self.robotics_ms_service = robotics_ms_service.RoboticsMsService()
         self._state_lock = threading.Lock()
         self._selected_microphone_id: str | None = self._audio_settings.preferred_microphone_id
         self._wake_word_detected_at: str | None = None
@@ -51,7 +56,7 @@ class AudioService:
         self._stop_event = threading.Event()
         self._worker: threading.Thread | None = None
 
-        self._vosk_model: Model | None = None
+        self._vosk_model: Any | None = None
         self._active_sample_rate = self._audio_settings.sample_rate
 
     def start(self) -> None:
@@ -68,6 +73,10 @@ class AudioService:
         )
         self._worker.start()
         logger.info("audio_service_started", auto_listening=self._listening_enabled)
+
+    def bind_rpc(self, rpc_nc: Any, loop: asyncio.AbstractEventLoop) -> None:
+        self._rpc_nc = rpc_nc
+        self._loop = loop
 
     def stop(self) -> None:
         self._running = False
@@ -175,6 +184,7 @@ class AudioService:
         silence_ms = 0
         recording_ms = 0
         active_capture = False
+        detected_wake_phrase: str | None = None
 
         with sd.RawInputStream(
             samplerate=stream_sample_rate,
@@ -199,10 +209,12 @@ class AudioService:
                     _ = wake_recognizer.AcceptWaveform(chunk)
                     partial = json.loads(wake_recognizer.PartialResult()).get("partial", "").lower()
                     final_text = json.loads(wake_recognizer.Result()).get("text", "").lower()
-                    if self._contains_wake_phrase(partial) or self._contains_wake_phrase(
+                    wake_phrase = self._extract_wake_phrase(partial) or self._extract_wake_phrase(
                         final_text
-                    ):
+                    )
+                    if wake_phrase:
                         active_capture = True
+                        detected_wake_phrase = wake_phrase
                         self._mark_wake_word()
                         command_recognizer = KaldiRecognizer(model, stream_sample_rate)
                         for historical in pre_roll:
@@ -214,7 +226,9 @@ class AudioService:
 
                 command_recognizer.AcceptWaveform(chunk)
                 recording_ms += self._audio_settings.chunk_ms
-                if self._is_speech(chunk, vad):
+                if recording_ms < self._audio_settings.post_wake_grace_ms or self._is_speech(
+                    chunk, vad
+                ):
                     silence_ms = 0
                 else:
                     silence_ms += self._audio_settings.chunk_ms
@@ -226,11 +240,17 @@ class AudioService:
                 )
                 if reached_max or (reached_long_silence and enough_audio):
                     transcript = self._extract_transcript(command_recognizer)
-                    if transcript:
-                        self._mark_transcript(transcript)
+                    transcript_with_wake = self._build_transcript_with_wake(
+                        transcript,
+                        detected_wake_phrase,
+                    )
+                    if transcript_with_wake:
+                        self._mark_transcript(transcript_with_wake)
+                        self._dispatch_transcript(transcript_with_wake)
                     else:
                         logger.info("speech_capture_finished_without_text")
                     active_capture = False
+                    detected_wake_phrase = None
                     silence_ms = 0
                     recording_ms = 0
                     pre_roll.clear()
@@ -240,7 +260,7 @@ class AudioService:
                         json.dumps(self._audio_settings.wake_phrases, ensure_ascii=True),
                     )
 
-    def _ensure_model(self) -> Model:
+    def _ensure_model(self) -> Any:
         if Model is None:
             raise RuntimeError("vosk is not installed")
         if self._vosk_model is not None:
@@ -252,22 +272,22 @@ class AudioService:
         logger.info("vosk_model_loaded", model_path=str(model_path))
         return self._vosk_model
 
-    def _contains_wake_phrase(self, text: str) -> bool:
+    def _extract_wake_phrase(self, text: str) -> str | None:
         value = text.strip().lower()
         if not value:
-            return False
+            return None
         for wake in self._audio_settings.wake_phrases:
             if wake in value:
-                return True
+                return wake
             if not self._audio_settings.wake_partial_match and value == wake:
-                return True
-        return False
+                return wake
+        return None
 
-    def _extract_transcript(self, recognizer: KaldiRecognizer) -> str:
+    def _extract_transcript(self, recognizer: Any) -> str:
         final_raw = json.loads(recognizer.FinalResult()).get("text", "")
         return str(final_raw).strip()
 
-    def _is_speech(self, chunk: bytes, vad: webrtcvad.Vad) -> bool:
+    def _is_speech(self, chunk: bytes, vad: Any) -> bool:
         chunk_ms = self._audio_settings.chunk_ms
         if chunk_ms not in (10, 20, 30):
             return False
@@ -331,6 +351,36 @@ class AudioService:
             self._last_error = error
         logger.error("audio_listener_error", error=error)
 
+    def _build_transcript_with_wake(
+        self,
+        transcript: str,
+        wake_phrase: str | None,
+    ) -> str:
+        cleaned = transcript.strip()
+        if wake_phrase is None:
+            return cleaned
+        wake = wake_phrase.strip()
+        if not cleaned:
+            return wake
+        lower = cleaned.lower()
+        if wake in lower:
+            return cleaned
+        return f"{wake} {cleaned}".strip()
+
+    def _dispatch_transcript(self, transcript: str) -> None:
+        if self._loop is None or self._rpc_nc is None:
+            logger.warning("audio_rpc_not_bound", transcript=transcript)
+            return
+        if len(transcript.strip()) >= self._audio_settings.min_useful_transcript_chars:
+            self.management_ms_service.chat(transcript)
+            return
+        logger.info(
+            "audio_transcript_too_short_for_chat",
+            transcript=transcript,
+            min_chars=self._audio_settings.min_useful_transcript_chars,
+        )
+        self.robotics_ms_service.speak(self._audio_settings.fallback_speak_message)
+
     def _ensure_selected_microphone(self, microphones: list[MicrophoneInfo]) -> str | None:
         if not microphones:
             with self._state_lock:
@@ -354,10 +404,3 @@ class AudioService:
     def _sync_selection_with_hardware(self) -> None:
         microphones = discover_usb_microphones(preferred_id=self._selected_microphone_id)
         self._ensure_selected_microphone(microphones)
-        # Lightweight heartbeat to aid observability.
-        # if microphones:
-        #     logger.debug(
-        #         "audio_microphones_polled",
-        #         count=len(microphones),
-        #         selected_microphone_id=self._selected_microphone_id,
-        #     )

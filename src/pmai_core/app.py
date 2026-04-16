@@ -36,6 +36,7 @@ async def run_app(settings: Settings | None = None) -> None:
 
     identification_service = IdentificationService(settings, nats_client)
     audio_service = AudioService(settings)
+    audio_service.bind_rpc(nats_handler.nc, asyncio.get_running_loop())
     audio_service.start()
 
     engine = PipelineEngine(

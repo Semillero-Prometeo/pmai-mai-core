@@ -110,9 +110,12 @@ class AudioSettings(BaseModel):
     channels: int = 1
     chunk_ms: int = 30
     long_silence_ms: int = 1600
+    post_wake_grace_ms: int = 1800
     max_recording_seconds: float = 12.0
     min_recording_seconds: float = 0.8
     preroll_seconds: float = 0.4
+    min_useful_transcript_chars: int = 14
+    fallback_speak_message: str = "No te escuche con claridad, puedes repetirlo por favor."
 
     wake_phrases: list[str] = ["hey fede", "hola fede"]
     wake_partial_match: bool = True
@@ -121,10 +124,11 @@ class AudioSettings(BaseModel):
     poll_interval_seconds: float = 5.0
 
     @model_validator(mode="after")
-    def _normalize_audio_settings(self) -> "AudioSettings":
+    def _normalize_audio_settings(self) -> AudioSettings:
         preferred = (self.preferred_microphone_id or "").strip()
         self.preferred_microphone_id = preferred or None
         self.wake_phrases = [p.strip().lower() for p in self.wake_phrases if p.strip()]
+        self.min_useful_transcript_chars = max(1, self.min_useful_transcript_chars)
         return self
 
 
