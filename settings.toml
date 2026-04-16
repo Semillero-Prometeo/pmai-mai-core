@@ -36,6 +36,23 @@ gallery_max_size = 1000
 # Camera remains open; only result delivery is throttled.
 result_interval_seconds = 5.0
 
+[audio]
+enabled = true
+auto_start_listening = true
+auto_select_microphone = true
+preferred_microphone_id = ""
+sample_rate = 16000
+channels = 1
+chunk_ms = 30
+long_silence_ms = 1600
+max_recording_seconds = 12.0
+min_recording_seconds = 0.8
+preroll_seconds = 0.4
+wake_phrases = ["hey fede", "hola fede"]
+wake_partial_match = true
+vosk_model_path = "/app/src/pmai_core/models/vosk-model-small-es-0.42"
+poll_interval_seconds = 5.0
+
 [nats]
 url = "nats://localhost:4222"
 subject_prefix = "pmai"
