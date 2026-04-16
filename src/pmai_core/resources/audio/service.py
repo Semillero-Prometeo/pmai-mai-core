@@ -355,9 +355,9 @@ class AudioService:
         microphones = discover_usb_microphones(preferred_id=self._selected_microphone_id)
         self._ensure_selected_microphone(microphones)
         # Lightweight heartbeat to aid observability.
-        if microphones:
-            logger.debug(
-                "audio_microphones_polled",
-                count=len(microphones),
-                selected_microphone_id=self._selected_microphone_id,
-            )
+        # if microphones:
+        #     logger.debug(
+        #         "audio_microphones_polled",
+        #         count=len(microphones),
+        #         selected_microphone_id=self._selected_microphone_id,
+        #     )
