@@ -35,3 +35,4 @@ class GlobalObjectForContext(BaseModel):
         default=None,
         description="Base64-encoded image from best view",
     )
+    question: str | None = Field(default=None, description="User question for this turn")
