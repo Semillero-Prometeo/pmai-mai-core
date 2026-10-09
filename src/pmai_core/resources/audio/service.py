@@ -19,6 +19,14 @@ from pmai_core.settings import Settings
 
 logger = structlog.get_logger(__name__)
 
+
+def _log_voice_turn_failure(future: concurrent.futures.Future[Any]) -> None:
+    if future.cancelled():
+        return
+    exc = future.exception()
+    if exc is not None:
+        logger.error("audio_voice_turn_failed", error=str(exc), exc_info=exc)
+
 try:
     import sounddevice as sd
 except (ModuleNotFoundError, OSError):  # pragma: no cover - guarded at runtime
@@ -368,7 +376,11 @@ class AudioService:
         return f"{wake} {cleaned}".strip()
 
     def _dispatch_transcript(self, transcript: str) -> None:
-        asyncio.run_coroutine_threadsafe(self._turn.ask_async(transcript, "voice"), self._loop)
+        future = asyncio.run_coroutine_threadsafe(
+            self._turn.ask_async(transcript, "voice"),
+            self._loop,
+        )
+        future.add_done_callback(_log_voice_turn_failure)
 
     def _ensure_selected_microphone(self, microphones: list[MicrophoneInfo]) -> str | None:
         if not microphones:

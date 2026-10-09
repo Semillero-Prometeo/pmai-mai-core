@@ -23,6 +23,15 @@ from pmai_core.settings import Settings
 
 logger = structlog.get_logger(__name__)
 
+_APOLOGY_ANSWER = {
+    "respuesta": "Lo siento, no puedo responder en este momento.",
+    "movimientos": [],
+}
+
+
+def _apology_answer(_obj, _catalog) -> dict:
+    return dict(_APOLOGY_ANSWER)
+
 
 async def run_app(settings: Settings | None = None) -> None:
     """Entry point that bootstraps NATS RPC, the pipeline, and graceful shutdown."""
@@ -66,7 +75,11 @@ async def run_app(settings: Settings | None = None) -> None:
         )
         return context
 
-    from utils.main import responder
+    try:
+        from utils.main import responder
+    except ImportError:
+        logger.exception("runtime_responder_import_failed")
+        responder = _apology_answer
 
     turn = InteractionTurn(
         objects=scene.objects,
