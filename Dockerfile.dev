@@ -16,10 +16,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libglib2.0-0 \
     libgl1 \
+    build-essential \
+    cmake \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies and package (needs `src` so that `pmai_core` exists)
-COPY pyproject.toml README.md LICENSE src/ /app/
+COPY pmai-mai-core/pyproject.toml pmai-mai-core/README.md pmai-mai-core/LICENSE pmai-mai-core/src/ /app/
 RUN python -m pip install --upgrade pip && pip install -e ".[dev]"
 
-# Source is also bind-mounted in docker-compose for live dev, but the\n# package is already installed in site-packages so `python -m pmai_core`\n# works even without the volume.\nCMD ["python", "-m", "pmai_core", "/app/settings.toml"]
+COPY pmai-model-context /tmp/model-context
+COPY pmai-model-vision-language /tmp/action-model
+RUN pip install /tmp/model-context /tmp/action-model
+
+# Source is also bind-mounted in docker-compose for live dev, but the
+# package is already installed in site-packages so `python -m pmai_core`
+# works even without the volume.
+CMD ["python", "-m", "pmai_core", "/app/settings.toml"]
