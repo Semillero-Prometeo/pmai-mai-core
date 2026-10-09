@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from collections.abc import Callable
@@ -54,6 +55,9 @@ class InteractionTurn:
         self._busy_phrase = BUSY_PHRASE
         self._apology = APOLOGY_PHRASE
         self._short_voice = SHORT_VOICE_PHRASE
+
+    async def ask_async(self, message: str, source: str) -> str:
+        return await asyncio.to_thread(self.ask, message, source)
 
     def ask(self, message: str, source: str) -> str:
         stripped = message.strip()

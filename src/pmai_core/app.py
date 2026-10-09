@@ -7,10 +7,15 @@ import signal
 
 import structlog
 
+from pmai_core.api.interaction.interaction_controller import InteractionController
+from pmai_core.api.robotics_ms.robotics_ms_service import RoboticsMsService
 from pmai_core.core.nats.nats_client import nats_handler
 from pmai_core.core.nats.nats_subscribers import create_subscribers
 from pmai_core.messaging.client import NATSClient
 from pmai_core.pipeline.engine import PipelineEngine
+from pmai_core.pipeline.interaction_turn import InteractionTurn
+from pmai_core.pipeline.runtime import prepare_runtime
+from pmai_core.pipeline.scene import Scene
 from pmai_core.resources.audio.service import AudioService
 from pmai_core.resources.camera.manager import CameraManager
 from pmai_core.resources.identification.service import IdentificationService
@@ -37,7 +42,6 @@ async def run_app(settings: Settings | None = None) -> None:
     identification_service = IdentificationService(settings, nats_client)
     audio_service = AudioService(settings)
     audio_service.bind_rpc(nats_handler.nc, asyncio.get_running_loop())
-    audio_service.start()
 
     engine = PipelineEngine(
         camera_manager=camera_manager,
@@ -46,12 +50,43 @@ async def run_app(settings: Settings | None = None) -> None:
 
     await nats_handler.connect(settings.nats.url)
 
+    prepare_runtime()
+    robotics = RoboticsMsService()
+    scene = Scene(identification_service)
+
+    def caption(encoded: str) -> str:
+        from model_context.cache import get_cache
+        from model_context.context import generate_context_from_base64
+
+        cache = get_cache()
+        context, _prompt = generate_context_from_base64(
+            encoded,
+            cache["processor"],
+            cache["model"],
+        )
+        return context
+
+    from utils.main import responder
+
+    turn = InteractionTurn(
+        objects=scene.objects,
+        frame=scene.frame,
+        caption=caption,
+        load_catalog=robotics.get_actions,
+        answer=responder,
+        speak=robotics.speak,
+        execute=robotics.execute_action,
+    )
+    audio_service.bind_turn(turn)
+    audio_service.start()
+
     subscribers = create_subscribers(
         nats_handler.nc,
         settings=settings,
         camera_manager=camera_manager,
         identification_service=identification_service,
         audio_service=audio_service,
+        interaction_controller=InteractionController(turn),
     )
     for subscriber in subscribers:
         await nats_handler.subscribe(subscriber)

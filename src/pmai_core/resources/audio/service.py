@@ -13,8 +13,6 @@ from typing import Any
 
 import structlog
 
-from pmai_core.api.management_ms import management_ms_service
-from pmai_core.api.robotics_ms import robotics_ms_service
 from pmai_core.resources.audio.discovery import discover_usb_microphones
 from pmai_core.resources.audio.models import AudioRuntimeStatus, MicrophoneInfo
 from pmai_core.settings import Settings
@@ -42,8 +40,7 @@ class AudioService:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._audio_settings = settings.audio
-        self.management_ms_service = management_ms_service.ManagementMsService()
-        self.robotics_ms_service = robotics_ms_service.RoboticsMsService()
+        self._turn: Any | None = None
         self._state_lock = threading.Lock()
         self._selected_microphone_id: str | None = self._audio_settings.preferred_microphone_id
         self._wake_word_detected_at: str | None = None
@@ -77,6 +74,9 @@ class AudioService:
     def bind_rpc(self, rpc_nc: Any, loop: asyncio.AbstractEventLoop) -> None:
         self._rpc_nc = rpc_nc
         self._loop = loop
+
+    def bind_turn(self, turn: Any) -> None:
+        self._turn = turn
 
     def stop(self) -> None:
         self._running = False
@@ -368,16 +368,7 @@ class AudioService:
         return f"{wake} {cleaned}".strip()
 
     def _dispatch_transcript(self, transcript: str) -> None:
-        if len(transcript.strip()) >= self._audio_settings.min_useful_transcript_chars:
-            self.management_ms_service.chat(transcript)
-            return
-
-        logger.info(
-            "audio_transcript_too_short_for_chat",
-            transcript=transcript,
-            min_chars=self._audio_settings.min_useful_transcript_chars,
-        )
-        self.robotics_ms_service.speak(self._audio_settings.fallback_speak_message)
+        asyncio.run_coroutine_threadsafe(self._turn.ask_async(transcript, "voice"), self._loop)
 
     def _ensure_selected_microphone(self, microphones: list[MicrophoneInfo]) -> str | None:
         if not microphones:

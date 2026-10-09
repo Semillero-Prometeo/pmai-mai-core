@@ -7,6 +7,7 @@ from nats.aio.client import Client as NATSClient
 from pmai_core.api.audio.audio_controller import AudioController
 from pmai_core.api.camera.camera_controller import CameraController
 from pmai_core.api.health.health_controller import HealthController
+from pmai_core.api.interaction.interaction_controller import InteractionController
 from pmai_core.api.monitoring.monitoring_controller import MonitoringController
 from pmai_core.api.vision.vision_controller import VisionController
 from pmai_core.core.nats.interfaces.nats_interface import NatsSubscriber
@@ -22,6 +23,7 @@ def create_subscribers(
     camera_manager: CameraManager,
     identification_service: IdentificationService,
     audio_service: AudioService,
+    interaction_controller: InteractionController,
 ) -> list[NatsSubscriber]:
     _ = nats_client
     ms = settings.nats.ms_name
@@ -84,5 +86,9 @@ def create_subscribers(
         NatsSubscriber(
             controller=audio_controller.get_listening_status,
             subject=f"{ms}.microphoneService.getListeningStatus",
+        ),
+        NatsSubscriber(
+            controller=interaction_controller.ask,
+            subject=f"{ms}.interactionService.ask",
         ),
     ]

@@ -16,3 +16,21 @@ class RoboticsMsService:
             subject=f"{self.robotics_ms}.voiceService.speak", payload=payload, timeout=30.0
         )
         logger.info("audio_robotics_speak_sent", message=message, response=response)
+
+    def get_actions(self) -> list[dict]:
+        response = self.nats_handler.sync_request(
+            subject=f"{self.robotics_ms}.actionService.getActions",
+            payload={},
+            timeout=10.0,
+        )
+        if isinstance(response, dict):
+            data = response.get("data", [])
+            return data if isinstance(data, list) else []
+        return []
+
+    def execute_action(self, action_id: int, arduino_id: int) -> None:
+        self.nats_handler.sync_request(
+            subject=f"{self.robotics_ms}.actionService.executeAction",
+            payload={"action_id": action_id, "arduino_id": arduino_id},
+            timeout=10.0,
+        )
