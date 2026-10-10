@@ -6,7 +6,7 @@ log_level = "INFO"
 # Camera source mode:
 # - "v4l2": real USB cameras (production / Linux nativo)
 # - "video_folder": each video in `video_folder_path` is treated as camera usb_0..N
-source_mode = "v4l2"
+source_mode = "video_folder"
 
 # V4L2 settings (used when source_mode="v4l2")
 auto_discover = true
@@ -37,7 +37,7 @@ gallery_max_size = 1000
 result_interval_seconds = 5.0
 
 [audio]
-enabled = true
+enabled = false
 auto_start_listening = true
 auto_select_microphone = true
 preferred_microphone_id = ""

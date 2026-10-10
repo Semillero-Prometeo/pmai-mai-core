@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 class AskReply(BaseModel):
     reply: str
+    fuente: str = ""
 
 
 class InteractionController:
@@ -19,4 +20,4 @@ class InteractionController:
     async def ask(self, data: dict[str, Any]) -> AskReply:
         message = str(data.get("message") or "")
         reply = await asyncio.to_thread(self._turn.ask, message, "chat")
-        return AskReply(reply=reply)
+        return AskReply(reply=str(reply), fuente=str(getattr(reply, "fuente", "")))

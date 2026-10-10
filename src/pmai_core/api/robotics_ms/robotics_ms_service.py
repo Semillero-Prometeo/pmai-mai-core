@@ -23,12 +23,17 @@ class RoboticsMsService:
             payload={},
             timeout=10.0,
         )
+        logger.info("robotics_actions_loaded response=%s", response)
         if isinstance(response, dict):
             data = response.get("data", [])
-            return data if isinstance(data, list) else []
-        return []
+            actions = data if isinstance(data, list) else []
+        else:
+            actions = []
+        logger.info("robotics_actions_loaded", count=len(actions))
+        return actions
 
     def execute_action(self, action_id: int, arduino_id: int) -> None:
+        logger.info("robotics_execute", action_id=action_id, arduino_id=arduino_id)
         self.nats_handler.sync_request(
             subject=f"{self.robotics_ms}.actionService.executeAction",
             payload={"action_id": action_id, "arduino_id": arduino_id},
