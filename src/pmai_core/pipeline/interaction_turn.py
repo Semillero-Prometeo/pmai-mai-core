@@ -23,13 +23,20 @@ MAX_MOVEMENTS = 3
 
 
 class TurnResult(str):
-    """Reply text that also carries where the answer came from."""
+    """Reply text plus where it came from and which gestures were sent."""
 
     fuente: str
+    movimientos: list
 
-    def __new__(cls, reply: str, fuente: str = "") -> TurnResult:
+    def __new__(
+        cls,
+        reply: str,
+        fuente: str = "",
+        movimientos: list | None = None,
+    ) -> TurnResult:
         value = str.__new__(cls, reply)
         value.fuente = fuente
+        value.movimientos = list(movimientos or [])
         return value
 
 
@@ -103,8 +110,11 @@ class InteractionTurn:
             movements=[row.get("id") for row in rows],
         )
         self._speak_and_execute(reply, rows)
-        logger.info("turn_done", fuente=fuente, chars=len(reply))
-        return TurnResult(reply, fuente)
+        executed = [
+            {"id": int(row["id"]), "name": str(row.get("name") or row["id"])} for row in rows
+        ]
+        logger.info("turn_done", fuente=fuente, chars=len(reply), movements=executed)
+        return TurnResult(reply, fuente, executed)
 
     def _scene_object(self, stripped: str) -> GlobalObjectForContext:
         chosen = choose_person(self._objects())

@@ -29,7 +29,14 @@ class RoboticsMsService:
             actions = data if isinstance(data, list) else []
         else:
             actions = []
-        logger.info("robotics_actions_loaded", count=len(actions))
+        if actions:
+            logger.info("robotics_actions_loaded", count=len(actions))
+        else:
+            logger.warning(
+                "robotics_actions_empty",
+                reason="sin_arduino",
+                detail="getActions devolvió 0 movimientos; no hay puerto serial ttyACM/ttyUSB",
+            )
         return actions
 
     def execute_action(self, action_id: int, arduino_id: int) -> None:

@@ -8,9 +8,15 @@ from typing import Any
 from pydantic import BaseModel
 
 
+class ExecutedMovement(BaseModel):
+    id: int
+    name: str
+
+
 class AskReply(BaseModel):
     reply: str
     fuente: str = ""
+    movimientos: list[ExecutedMovement] = []
 
 
 class InteractionController:
@@ -20,4 +26,14 @@ class InteractionController:
     async def ask(self, data: dict[str, Any]) -> AskReply:
         message = str(data.get("message") or "")
         reply = await asyncio.to_thread(self._turn.ask, message, "chat")
-        return AskReply(reply=str(reply), fuente=str(getattr(reply, "fuente", "")))
+        raw_movements = getattr(reply, "movimientos", []) or []
+        movements = [
+            ExecutedMovement(id=int(item["id"]), name=str(item.get("name") or item["id"]))
+            for item in raw_movements
+            if isinstance(item, dict) and "id" in item
+        ]
+        return AskReply(
+            reply=str(reply),
+            fuente=str(getattr(reply, "fuente", "")),
+            movimientos=movements,
+        )
