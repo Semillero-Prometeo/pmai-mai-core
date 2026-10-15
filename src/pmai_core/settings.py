@@ -95,7 +95,7 @@ class PipelineSettings(BaseModel):
 
     # Interval in seconds between emitting results (NATS + view state).
     # Camera stays open; only the delivery of detections/ReID is throttled.
-    result_interval_seconds: float = 5.0
+    result_interval_seconds: float = 1.0
 
 
 class AudioSettings(BaseModel):

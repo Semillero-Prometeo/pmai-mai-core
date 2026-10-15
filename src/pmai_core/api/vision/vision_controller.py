@@ -93,14 +93,6 @@ class VisionController:
                 max_width=req.thumb_max_width,
                 jpeg_quality=82,
             )
-            preview_b64: str | None = None
-            if req.selected_camera_id is not None and req.selected_camera_id == info.camera_id:
-                preview_b64 = frame_to_jpeg_base64(
-                    annotated_frame,
-                    max_width=req.preview_max_width,
-                    jpeg_quality=88,
-                )
-
             tiles.append(
                 CameraStreamTile(
                     camera_id=info.camera_id,
@@ -112,7 +104,7 @@ class VisionController:
                     status=info.status.value,
                     has_frame=True,
                     thumbnail_jpeg_base64=thumb_b64,
-                    preview_jpeg_base64=preview_b64,
+                    preview_jpeg_base64=None,
                 )
             )
 

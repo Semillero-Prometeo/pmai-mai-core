@@ -34,7 +34,7 @@ gallery_max_size = 1000
 [pipeline]
 # Interval between emitting identification results (NATS + visualization).
 # Camera remains open; only result delivery is throttled.
-result_interval_seconds = 5.0
+result_interval_seconds = 1.0
 
 [audio]
 enabled = false

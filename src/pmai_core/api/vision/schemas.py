@@ -26,9 +26,9 @@ class VisionSnapshotRequest(BaseModel):
         validation_alias=AliasChoices("selected_camera_id", "selectedCameraId"),
     )
     thumb_max_width: int = Field(
-        default=160,
+        default=480,
         ge=32,
-        le=640,
+        le=960,
         validation_alias=AliasChoices("thumb_max_width", "thumbMaxWidth"),
     )
     preview_max_width: int = Field(
