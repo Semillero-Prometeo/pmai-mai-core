@@ -54,8 +54,8 @@ class PipelineEngine:
                 continue
 
             # Rest of flow (e.g. downstream phases consuming global_objects)
-            logger.debug("context_objects_ready", count=len(global_objects))
-            print(global_objects)
+            # logger.debug("context_objects_ready", count=len(global_objects))
+            # print(global_objects)
 
     def stop(self) -> None:
         self._running = False
