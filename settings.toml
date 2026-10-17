@@ -6,7 +6,7 @@ log_level = "INFO"
 # Camera source mode:
 # - "v4l2": real USB cameras (production / Linux nativo)
 # - "video_folder": each video in `video_folder_path` is treated as camera usb_0..N
-source_mode = "video_folder"
+source_mode = "v4l2"
 
 # V4L2 settings (used when source_mode="v4l2")
 auto_discover = true
