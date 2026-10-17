@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import json
 import threading
 from collections import deque
@@ -18,14 +17,6 @@ from pmai_core.resources.audio.models import AudioRuntimeStatus, MicrophoneInfo
 from pmai_core.settings import Settings
 
 logger = structlog.get_logger(__name__)
-
-
-def _log_voice_turn_failure(future: concurrent.futures.Future[Any]) -> None:
-    if future.cancelled():
-        return
-    exc = future.exception()
-    if exc is not None:
-        logger.error("audio_voice_turn_failed", error=str(exc), exc_info=exc)
 
 try:
     import sounddevice as sd
@@ -49,6 +40,7 @@ class AudioService:
         self._settings = settings
         self._audio_settings = settings.audio
         self._turn: Any | None = None
+        self._chat: Any | None = None
         self._state_lock = threading.Lock()
         self._selected_microphone_id: str | None = self._audio_settings.preferred_microphone_id
         self._wake_word_detected_at: str | None = None
@@ -85,6 +77,9 @@ class AudioService:
 
     def bind_turn(self, turn: Any) -> None:
         self._turn = turn
+
+    def bind_chat(self, chat: Any) -> None:
+        self._chat = chat
 
     def stop(self) -> None:
         self._running = False
@@ -376,11 +371,14 @@ class AudioService:
         return f"{wake} {cleaned}".strip()
 
     def _dispatch_transcript(self, transcript: str) -> None:
-        future = asyncio.run_coroutine_threadsafe(
-            self._turn.ask_async(transcript, "voice"),
-            self._loop,
-        )
-        future.add_done_callback(_log_voice_turn_failure)
+        chat = self._chat
+        if chat is None:
+            logger.error("audio_chat_unbound")
+            return
+        try:
+            chat(transcript)
+        except Exception as exc:
+            logger.error("audio_voice_chat_failed", error=str(exc), exc_info=exc)
 
     def _ensure_selected_microphone(self, microphones: list[MicrophoneInfo]) -> str | None:
         if not microphones:

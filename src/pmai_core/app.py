@@ -8,6 +8,7 @@ import signal
 import structlog
 
 from pmai_core.api.interaction.interaction_controller import InteractionController
+from pmai_core.api.management_ms.management_ms_service import ManagementMsService
 from pmai_core.api.robotics_ms.robotics_ms_service import RoboticsMsService
 from pmai_core.core.nats.nats_client import nats_handler
 from pmai_core.core.nats.nats_subscribers import create_subscribers
@@ -91,6 +92,7 @@ async def run_app(settings: Settings | None = None) -> None:
         execute=robotics.execute_action,
     )
     audio_service.bind_turn(turn)
+    audio_service.bind_chat(ManagementMsService().chat)
     audio_service.start()
 
     subscribers = create_subscribers(
