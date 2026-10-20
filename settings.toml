@@ -27,14 +27,14 @@ device = "cpu"
 
 [reid]
 model_path = "/app/src/pmai_core/models/osnet_x0_25_msmt17.onnx"
-similarity_threshold = 0.7
+similarity_threshold = 0.6
 embedding_update_interval = 5
 gallery_max_size = 1000
 
 [pipeline]
 # Interval between emitting identification results (NATS + visualization).
 # Camera remains open; only result delivery is throttled.
-result_interval_seconds = 1.0
+result_interval_seconds = 0.75
 
 [audio]
 enabled = false
