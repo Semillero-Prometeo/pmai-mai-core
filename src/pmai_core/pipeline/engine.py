@@ -42,7 +42,7 @@ class PipelineEngine:
 
             captures = self._camera_manager.captures
             if not captures:
-                logger.debug("no_captures_skipping")
+                # logger.debug("no_captures_skipping")
                 continue
 
             await self._identification.run_phase(captures)
