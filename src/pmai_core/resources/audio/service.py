@@ -17,11 +17,7 @@ import structlog
 from pmai_core.resources.audio.discovery import discover_usb_microphones
 from pmai_core.resources.audio.energy import WakeEnergyGate, chunk_rms
 from pmai_core.resources.audio.level import LevelHold, listening_phase
-from pmai_core.resources.audio.listen_rules import (
-    VadSession,
-    capture_should_end,
-    next_silence_ms,
-)
+from pmai_core.resources.audio.listen_rules import VadSession, capture_should_end, next_silence_ms
 from pmai_core.resources.audio.models import AudioRuntimeStatus, MicrophoneInfo
 from pmai_core.resources.audio.resample import FrameSlicer, resample_linear
 from pmai_core.resources.audio.wake_match import WakeConfirm, match_wake_phrase
@@ -521,9 +517,7 @@ class AudioService:
 
     def _is_portaudio(self, exc: Exception) -> bool:
         return bool(
-            sd is not None
-            and hasattr(sd, "PortAudioError")
-            and isinstance(exc, sd.PortAudioError)
+            sd is not None and hasattr(sd, "PortAudioError") and isinstance(exc, sd.PortAudioError)
         )
 
     def _new_wake_recognizer(self, model: Any) -> Any:
