@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from pmai_core import __version__
+from pmai_core.resources.audio.models import AudioRuntimeStatus
 from pmai_core.resources.audio.service import AudioService
 
 
@@ -58,13 +59,20 @@ class AudioController:
         return {"status": "ok", "message": "Background listening stopped"}
 
     async def get_listening_status(self, _: dict[str, Any]) -> dict[str, Any]:
-        status = self._audio_service.get_status()
-        return {
-            "running": status.running,
-            "listening_enabled": status.listening_enabled,
-            "selected_microphone_id": status.selected_microphone_id,
-            "wake_word_detected_at": status.wake_word_detected_at,
-            "last_transcript": status.last_transcript,
-            "last_transcript_at": status.last_transcript_at,
-            "last_error": status.last_error,
-        }
+        return listening_status_payload(self._audio_service.get_status())
+
+
+def listening_status_payload(status: AudioRuntimeStatus) -> dict[str, Any]:
+    return {
+        "running": status.running,
+        "listening_enabled": status.listening_enabled,
+        "selected_microphone_id": status.selected_microphone_id,
+        "selected_microphone_name": status.selected_microphone_name,
+        "stream_open": status.stream_open,
+        "phase": status.phase.value,
+        "input_level": status.input_level,
+        "wake_word_detected_at": status.wake_word_detected_at,
+        "last_transcript": status.last_transcript,
+        "last_transcript_at": status.last_transcript_at,
+        "last_error": status.last_error,
+    }

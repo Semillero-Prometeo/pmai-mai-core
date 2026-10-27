@@ -13,7 +13,7 @@ from typing import Any
 import structlog
 
 from pmai_core.resources.audio.discovery import discover_usb_microphones
-from pmai_core.resources.audio.models import AudioRuntimeStatus, MicrophoneInfo
+from pmai_core.resources.audio.models import AudioRuntimeStatus, ListenPhase, MicrophoneInfo
 from pmai_core.settings import Settings
 
 logger = structlog.get_logger(__name__)
@@ -124,6 +124,10 @@ class AudioService:
                 running=self._running,
                 listening_enabled=self._listening_enabled,
                 selected_microphone_id=self._selected_microphone_id,
+                selected_microphone_name=None,
+                stream_open=False,
+                phase=ListenPhase.DISCONNECTED,
+                input_level=0,
                 wake_word_detected_at=self._wake_word_detected_at,
                 last_transcript=self._last_transcript,
                 last_transcript_at=self._last_transcript_at,

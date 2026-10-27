@@ -9,6 +9,14 @@ class MicrophoneStatus(StrEnum):
     DISCONNECTED = "disconnected"
 
 
+class ListenPhase(StrEnum):
+    DISCONNECTED = "disconnected"
+    SILENT = "silent"
+    HEARING = "hearing"
+    CAPTURING = "capturing"
+    ERROR = "error"
+
+
 @dataclass(slots=True)
 class MicrophoneInfo:
     microphone_id: str
@@ -26,6 +34,10 @@ class AudioRuntimeStatus:
     running: bool
     listening_enabled: bool
     selected_microphone_id: str | None
+    selected_microphone_name: str | None
+    stream_open: bool
+    phase: ListenPhase
+    input_level: int
     wake_word_detected_at: str | None
     last_transcript: str | None
     last_transcript_at: str | None
