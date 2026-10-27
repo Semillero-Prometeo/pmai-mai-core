@@ -52,6 +52,13 @@ preroll_seconds = 0.4
 min_useful_transcript_chars = 14
 fallback_speak_message = "No te escuche con claridad, puedes repetirlo por favor."
 wake_phrases = ["hey fede", "fede", "federico"]
+thinking_phrases = [
+  "Uy, buena esa. Dame un segundo.",
+  "Me gusta. La pienso rapidito.",
+  "Esa está buena. Ya te cuento.",
+  "Déjame pensarla un momentico.",
+  "Interesante. Vuelvo enseguida.",
+]
 wake_partial_match = true
 wake_energy_rms = 500
 wake_energy_hangover_ms = 300

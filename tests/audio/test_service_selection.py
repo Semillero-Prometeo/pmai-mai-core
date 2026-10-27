@@ -104,3 +104,28 @@ def test_dispatch_failure_keeps_the_transcript() -> None:
     status = service.get_status()
     assert status.last_transcript == "hey fede hola"
     assert status.phase == ListenPhase.SILENT
+
+
+def test_long_voice_hears_a_thinking_phrase_before_chat() -> None:
+    service = AudioService(Settings())
+    heard: list[str] = []
+    asked: list[str] = []
+    service.bind_speak(heard.append)
+    service.bind_chat(asked.append)
+    text = "hey fede cuentame un chiste corto"
+    service._dispatch_transcript(text)
+    service._dispatch_transcript(text)
+    phrases = service._audio_settings.thinking_phrases
+    assert heard == [phrases[0], phrases[1]]
+    assert asked == [text, text]
+
+
+def test_short_voice_skips_the_thinking_phrase() -> None:
+    service = AudioService(Settings())
+    heard: list[str] = []
+    asked: list[str] = []
+    service.bind_speak(heard.append)
+    service.bind_chat(asked.append)
+    service._dispatch_transcript("hey fede")
+    assert heard == []
+    assert asked == ["hey fede"]

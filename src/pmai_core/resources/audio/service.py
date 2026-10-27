@@ -48,6 +48,8 @@ class AudioService:
         self._audio_settings = settings.audio
         self._turn: Any | None = None
         self._chat: Any | None = None
+        self._speak: Any | None = None
+        self._thinking_index = 0
         self._state_lock = threading.Lock()
         self._selected_microphone_id: str | None = self._audio_settings.preferred_microphone_id
         self._wake_word_detected_at: str | None = None
@@ -98,6 +100,9 @@ class AudioService:
 
     def bind_chat(self, chat: Any) -> None:
         self._chat = chat
+
+    def bind_speak(self, speak: Any) -> None:
+        self._speak = speak
 
     def stop(self) -> None:
         self._running = False
@@ -445,11 +450,28 @@ class AudioService:
             return cleaned
         return f"{wake} {cleaned}".strip()
 
+    def _speak_while_thinking(self, transcript: str) -> None:
+        speak = self._speak
+        if speak is None:
+            return
+        if len(transcript.strip()) < self._audio_settings.min_useful_transcript_chars:
+            return
+        phrases = self._audio_settings.thinking_phrases
+        if not phrases:
+            return
+        phrase = phrases[self._thinking_index % len(phrases)]
+        self._thinking_index += 1
+        try:
+            speak(phrase)
+        except Exception as exc:
+            logger.error("audio_thinking_phrase_failed", error=str(exc))
+
     def _dispatch_transcript(self, transcript: str) -> None:
         chat = self._chat
         if chat is None:
             logger.error("audio_chat_unbound")
             return
+        self._speak_while_thinking(transcript)
         try:
             chat(transcript)
         except Exception as exc:

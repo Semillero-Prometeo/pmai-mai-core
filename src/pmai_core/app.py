@@ -93,6 +93,7 @@ async def run_app(settings: Settings | None = None) -> None:
     )
     audio_service.bind_turn(turn)
     audio_service.bind_chat(ManagementMsService().chat)
+    audio_service.bind_speak(robotics.speak)
     audio_service.start()
 
     subscribers = create_subscribers(

@@ -118,6 +118,13 @@ class AudioSettings(BaseModel):
     fallback_speak_message: str = "No te escuche con claridad, puedes repetirlo por favor."
 
     wake_phrases: list[str] = ["hey fede", "hola fede"]
+    thinking_phrases: list[str] = [
+        "Uy, buena esa. Dame un segundo.",
+        "Me gusta. La pienso rapidito.",
+        "Esa está buena. Ya te cuento.",
+        "Déjame pensarla un momentico.",
+        "Interesante. Vuelvo enseguida.",
+    ]
     wake_partial_match: bool = True
     wake_energy_rms: int = 500
     wake_energy_hangover_ms: int = 300
@@ -133,6 +140,7 @@ class AudioSettings(BaseModel):
         preferred = (self.preferred_microphone_id or "").strip()
         self.preferred_microphone_id = preferred or None
         self.wake_phrases = [p.strip().lower() for p in self.wake_phrases if p.strip()]
+        self.thinking_phrases = [p.strip() for p in self.thinking_phrases if p.strip()]
         self.min_useful_transcript_chars = max(1, self.min_useful_transcript_chars)
         self.wake_energy_rms = max(1, self.wake_energy_rms)
         self.wake_energy_hangover_ms = max(0, self.wake_energy_hangover_ms)
