@@ -119,6 +119,11 @@ class AudioSettings(BaseModel):
 
     wake_phrases: list[str] = ["hey fede", "hola fede"]
     wake_partial_match: bool = True
+    wake_energy_rms: int = 500
+    wake_energy_hangover_ms: int = 300
+    wake_confirm_chunks: int = 2
+    level_rms_full_scale: int = 4000
+    level_hold_ms: int = 500
 
     vosk_model_path: str = "models/vosk-model-small-es-0.42"
     poll_interval_seconds: float = 5.0
@@ -129,6 +134,11 @@ class AudioSettings(BaseModel):
         self.preferred_microphone_id = preferred or None
         self.wake_phrases = [p.strip().lower() for p in self.wake_phrases if p.strip()]
         self.min_useful_transcript_chars = max(1, self.min_useful_transcript_chars)
+        self.wake_energy_rms = max(1, self.wake_energy_rms)
+        self.wake_energy_hangover_ms = max(0, self.wake_energy_hangover_ms)
+        self.wake_confirm_chunks = max(1, self.wake_confirm_chunks)
+        self.level_rms_full_scale = max(1, self.level_rms_full_scale)
+        self.level_hold_ms = max(1, self.level_hold_ms)
         return self
 
 

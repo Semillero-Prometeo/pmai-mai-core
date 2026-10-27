@@ -53,6 +53,11 @@ min_useful_transcript_chars = 14
 fallback_speak_message = "No te escuche con claridad, puedes repetirlo por favor."
 wake_phrases = ["hey fede", "fede", "federico"]
 wake_partial_match = true
+wake_energy_rms = 500
+wake_energy_hangover_ms = 300
+wake_confirm_chunks = 2
+level_rms_full_scale = 4000
+level_hold_ms = 500
 vosk_model_path = "/app/src/pmai_core/models/vosk-model-small-es-0.42"
 poll_interval_seconds = 5.0
 
