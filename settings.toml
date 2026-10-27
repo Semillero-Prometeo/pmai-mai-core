@@ -37,7 +37,7 @@ gallery_max_size = 1000
 result_interval_seconds = 0.75
 
 [audio]
-enabled = false
+enabled = true
 auto_start_listening = true
 auto_select_microphone = true
 preferred_microphone_id = ""
